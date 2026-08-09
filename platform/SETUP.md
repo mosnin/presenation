@@ -1,0 +1,133 @@
+# Presenton Platform — Setup
+
+Three free-tier accounts are needed: [Convex](https://convex.dev),
+[Cloudflare R2](https://developers.cloudflare.com/r2/), and
+[Modal](https://modal.com). Roughly 30 minutes end to end.
+
+## 1. Cloudflare R2
+
+1. Cloudflare dashboard → **R2** → create bucket `presenton-artifacts`
+   (keep it private; free tier: 10 GB storage, zero egress fees).
+2. **R2 → Manage API tokens → Create API token** with *Object Read & Write*
+   on that bucket. Note the **Access Key ID**, **Secret Access Key**, and
+   your account's S3 endpoint: `https://<account-id>.r2.cloudflarestorage.com`.
+
+## 2. Convex + dashboard
+
+```bash
+cd platform/web
+npm install
+npx convex dev          # creates the deployment, generates convex/_generated
+```
+
+`npx convex dev` prints your deployment URL; put it in `.env.local`:
+
+```
+NEXT_PUBLIC_CONVEX_URL=https://<deployment>.convex.cloud
+```
+
+Initialize Convex Auth (generates JWT keys):
+
+```bash
+npx @convex-dev/auth
+```
+
+Set backend configuration:
+
+```bash
+npx convex env set SITE_URL http://localhost:3000
+npx convex env set R2_ENDPOINT https://<account-id>.r2.cloudflarestorage.com
+npx convex env set R2_ACCESS_KEY_ID <key-id>
+npx convex env set R2_SECRET_ACCESS_KEY <secret>
+npx convex env set R2_BUCKET presenton-artifacts
+npx convex env set MODAL_CALLBACK_SECRET "$(openssl rand -hex 32)"
+```
+
+Run the dashboard:
+
+```bash
+npm run dev             # http://localhost:3000
+```
+
+## 3. Modal worker
+
+```bash
+pip install modal
+modal setup             # authenticates your workspace
+```
+
+Create the worker secret (engine config uses the same names as the repo root
+`.env.example`; R2 values are the ones from step 1; the callback secret must
+match the Convex one):
+
+```bash
+modal secret create presenton-worker \
+  LLM=openai \
+  OPENAI_API_KEY=sk-... \
+  IMAGE_PROVIDER=pexels \
+  PEXELS_API_KEY=... \
+  R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
+  R2_ACCESS_KEY_ID=<key-id> \
+  R2_SECRET_ACCESS_KEY=<secret> \
+  R2_BUCKET=presenton-artifacts \
+  MODAL_CALLBACK_SECRET=<same-value-as-convex>
+```
+
+Deploy (from the repo root, so the image can bundle `platform/doc_engine`
+and `templates/`):
+
+```bash
+modal deploy platform/modal/worker.py
+```
+
+Note the printed URL of the `submit` endpoint. Then create a **proxy auth
+token** (Modal dashboard → Settings → Proxy Auth Tokens) and hand everything
+to Convex:
+
+```bash
+npx convex env set MODAL_SUBMIT_URL https://<workspace>--presenton-worker-submit.modal.run
+npx convex env set MODAL_PROXY_TOKEN_ID wk-...
+npx convex env set MODAL_PROXY_TOKEN_SECRET ws-...
+```
+
+## 4. Try it
+
+1. Open the dashboard → sign up → **API keys** → create a key.
+2. As an agent:
+
+```bash
+# Submit
+curl -X POST https://<deployment>.convex.site/agent/v1/jobs \
+  -H "Authorization: Bearer sk_pres_..." \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"document","request":{"content":"One-page brief on X","template":"momentum","formats":["pdf","docx"]}}'
+
+# Poll (returns presigned download URLs when finished)
+curl "https://<deployment>.convex.site/agent/v1/jobs/status?id=<job_id>" \
+  -H "Authorization: Bearer sk_pres_..."
+```
+
+Or run `python platform/examples/agent_client.py`.
+
+Note the two Convex URLs: `*.convex.cloud` is the client API
+(`NEXT_PUBLIC_CONVEX_URL`), while HTTP endpoints (`/agent/v1/*`) live on
+`*.convex.site`.
+
+## 5. Deploy the dashboard (optional)
+
+Any Next.js host works; Vercel free tier is the shortest path:
+set `NEXT_PUBLIC_CONVEX_URL`, run `npx convex deploy` for production, and
+update `SITE_URL` in the production deployment's env.
+
+## Local development without Modal
+
+The doc-engine runs standalone:
+
+```bash
+pip install python-docx
+cd platform
+python -m doc_engine --template momentum \
+  --content-file examples/brief.md --formats pdf,docx,html \
+  --templates-dir ../templates --out /tmp/doc-out \
+  --chromium /usr/bin/chromium
+```

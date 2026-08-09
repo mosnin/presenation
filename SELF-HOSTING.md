@@ -1,5 +1,9 @@
 # Self-Hosting Presenton
 
+> **Looking for the hosted multi-tenant platform?** The agent-facing web
+> service built on Convex + Cloudflare R2 + Modal — including document
+> generation in the template aesthetics — lives in [`platform/`](platform/README.md).
+
 Presenton is an open-source (Apache 2.0) AI presentation generator — a
 self-hosted alternative to Gamma / Canva / Beautiful.ai. It generates fully
 editable PPTX and PDF decks from a prompt or an uploaded document, using
