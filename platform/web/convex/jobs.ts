@@ -68,7 +68,7 @@ async function createAndDispatchHelper(
   args: {
     userId: Id<"users">;
     apiKeyId?: Id<"apiKeys">;
-    kind: "presentation" | "document" | "deck";
+    kind: "presentation" | "document" | "deck" | "style_preview";
     request: unknown;
   }
 ): Promise<Id<"jobs">> {
@@ -112,7 +112,7 @@ export const downloadUrls = action({
   handler: async (
     ctx,
     { jobId }
-  ): Promise<Array<{ format: string; url: string; public_url?: string }>> => {
+  ): Promise<Array<{ format: string; url: string; public_url?: string; theme?: string }>> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not signed in");
     const job: Doc<"jobs"> | null = await ctx.runQuery(api.jobs.get, { jobId });
@@ -122,6 +122,7 @@ export const downloadUrls = action({
         format: a.format,
         url: await r2.getUrl(a.r2Key, { expiresIn: SIGNED_URL_TTL_SECONDS }),
         ...(a.publicUrl ? { public_url: a.publicUrl } : {}),
+        ...(a.theme ? { theme: a.theme } : {}),
       }))
     );
   },
@@ -134,7 +135,7 @@ export const downloadUrlsInternal = action({
   handler: async (
     ctx,
     { jobId }
-  ): Promise<Array<{ format: string; url: string; public_url?: string }>> => {
+  ): Promise<Array<{ format: string; url: string; public_url?: string; theme?: string }>> => {
     const job: Doc<"jobs"> | null = await ctx.runQuery(
       internal.jobs.getInternal,
       { jobId }
@@ -145,6 +146,7 @@ export const downloadUrlsInternal = action({
         format: a.format,
         url: await r2.getUrl(a.r2Key, { expiresIn: SIGNED_URL_TTL_SECONDS }),
         ...(a.publicUrl ? { public_url: a.publicUrl } : {}),
+        ...(a.theme ? { theme: a.theme } : {}),
       }))
     );
   },

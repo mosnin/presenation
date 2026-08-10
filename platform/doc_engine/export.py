@@ -9,7 +9,17 @@ from pathlib import Path
 from .theme import Theme
 
 
-def html_to_pdf(html_text: str, out_path: str | Path, chromium: str) -> Path:
+def html_to_pdf(
+    html_text: str,
+    out_path: str | Path,
+    chromium: str,
+    virtual_time_budget_ms: int = 0,
+) -> Path:
+    """Print HTML to PDF with headless Chromium.
+
+    virtual_time_budget_ms gives webfonts time to load before printing; it
+    matters for themes that pull from Google Fonts rather than bundling TTFs.
+    """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -26,12 +36,17 @@ def html_to_pdf(html_text: str, out_path: str | Path, chromium: str) -> Path:
                 "--disable-gpu",
                 "--allow-file-access-from-files",
                 "--no-pdf-header-footer",
+                *(
+                    [f"--virtual-time-budget={virtual_time_budget_ms}"]
+                    if virtual_time_budget_ms
+                    else []
+                ),
                 f"--print-to-pdf={out_path}",
                 f"file://{html_path}",
             ],
             check=True,
             capture_output=True,
-            timeout=120,
+            timeout=180,
         )
     finally:
         Path(html_path).unlink(missing_ok=True)

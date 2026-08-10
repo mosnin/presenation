@@ -42,6 +42,19 @@ def create_artifact(kind: str, request: dict, poll_seconds: int = 5) -> dict:
 
 
 if __name__ == "__main__":
+    # Style previews first: one title-slide PNG per theme, so the look is
+    # chosen by looking rather than by guessing from a theme name.
+    result = create_artifact(
+        "style_preview",
+        {
+            "title": "Series A Pitch",
+            "subtitle": "AI-powered logistics",
+            "themes": ["momentum", "midnight-gold", "swiss-crimson"],
+        },
+    )
+    for art in result.get("artifacts", []):
+        print(f"{art['theme']}: {art['url']}")
+
     # A presentation, rendered by the Presenton engine on Modal:
     result = create_artifact(
         "presentation",
@@ -66,14 +79,25 @@ if __name__ == "__main__":
     )
     print(json.dumps(result, indent=2))
 
-    # A self-contained interactive HTML deck in a design-spec theme,
-    # published to a stable public URL anyone can open:
+    # A self-contained interactive HTML deck in a design-spec theme, plus a
+    # static PDF of the same deck, published to a stable public URL:
     result = create_artifact(
         "deck",
         {
             "content": "Five lessons from our first year of enterprise sales",
             "template": "midnight-gold",
+            "formats": ["html", "pdf"],
             "publish": True,
+        },
+    )
+    print(json.dumps(result, indent=2))
+
+    # Convert a PowerPoint someone already has into a themed web deck:
+    result = create_artifact(
+        "deck",
+        {
+            "source_pptx_url": "https://example.com/existing-deck.pptx",
+            "template": "swiss-crimson",
         },
     )
     print(json.dumps(result, indent=2))

@@ -6,7 +6,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useState } from "react";
 import Shell from "@/components/Shell";
 
-type Kind = "presentation" | "document" | "deck";
+type Kind = "presentation" | "document" | "deck" | "style_preview";
 
 // Slide templates (PPTX-capable) plus design specs (HTML/PDF/DOCX only).
 const SLIDE_TEMPLATES = [
@@ -45,9 +45,11 @@ function NewJobForm() {
                   n_slides: Number(data.get("n_slides")) || undefined,
                   export_as: data.get("format"),
                 }
-              : kind === "deck"
-                ? common
-                : { ...common, formats: [data.get("format")] };
+              : kind === "style_preview"
+                ? { title: data.get("content"), publish: common.publish }
+                : kind === "deck"
+                  ? { ...common, formats: [data.get("format")] }
+                  : { ...common, formats: [data.get("format")] };
           setBusy(true);
           try {
             await submit({ kind, request });
@@ -62,32 +64,46 @@ function NewJobForm() {
           <option value="presentation">Presentation (PPTX / PDF)</option>
           <option value="deck">Interactive HTML deck</option>
           <option value="document">Document (PDF / DOCX)</option>
+          <option value="style_preview">Style previews (pick a look)</option>
         </select>
-        <label>Content / prompt</label>
+        <label>{kind === "style_preview" ? "Deck title" : "Content / prompt"}</label>
         <textarea
           name="content"
           required
-          placeholder="Q3 sales review for an e-bike startup…"
+          placeholder={
+            kind === "style_preview"
+              ? "Q3 Sales Report"
+              : "Q3 sales review for an e-bike startup…"
+          }
         />
-        <label>Template</label>
-        <select name="template" defaultValue="general">
-          <optgroup label="Slide templates">
-            {SLIDE_TEMPLATES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </optgroup>
-          {kind !== "presentation" && (
-            <optgroup label="Design specs">
-              {DESIGN_SPECS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+        {kind === "style_preview" ? (
+          <p className="hint">
+            Renders the same title slide in several themes so you can pick by
+            looking, then submit the real job with that template.
+          </p>
+        ) : (
+          <>
+            <label>Template</label>
+            <select name="template" defaultValue="general">
+              <optgroup label="Slide templates">
+                {SLIDE_TEMPLATES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
+              {kind !== "presentation" && (
+                <optgroup label="Design specs">
+                  {DESIGN_SPECS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </>
+        )}
         {kind === "presentation" && (
           <>
             <label>Slides</label>
@@ -115,6 +131,15 @@ function NewJobForm() {
             </select>
           </>
         )}
+        {kind === "deck" && (
+          <>
+            <label>Format</label>
+            <select name="format" defaultValue="html">
+              <option value="html">Interactive HTML</option>
+              <option value="pdf">PDF (static, 16:9 pages)</option>
+            </select>
+          </>
+        )}
         <label
           style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
         >
@@ -136,7 +161,37 @@ function NewJobForm() {
 function DownloadLinks({ jobId }: { jobId: Id<"jobs"> }) {
   const getUrls = useAction(api.jobs.downloadUrls);
   const [urls, setUrls] =
-    useState<Array<{ format: string; url: string; public_url?: string }>>();
+    useState<
+      Array<{ format: string; url: string; public_url?: string; theme?: string }>
+    >();
+
+  // Style previews are meant to be looked at, so show the images inline.
+  if (urls?.length && urls.every((u) => u.format === "png")) {
+    return (
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {urls.map((u) => (
+          <figure key={u.theme ?? u.url} style={{ margin: 0, width: 210 }}>
+            <a href={u.url} target="_blank" rel="noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={u.url}
+                alt={`${u.theme ?? "preview"} title slide`}
+                style={{
+                  width: "100%",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  display: "block",
+                }}
+              />
+            </a>
+            <figcaption className="hint" style={{ marginTop: 4 }}>
+              {u.theme}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    );
+  }
 
   if (urls) {
     return (

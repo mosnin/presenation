@@ -12,13 +12,16 @@ export const jobStatus = v.union(
 export const jobKind = v.union(
   v.literal("presentation"), // PPTX/PDF via the Presenton engine
   v.literal("document"), // A4 PDF/DOCX/HTML via the doc-engine
-  v.literal("deck") // self-contained interactive HTML presentation
+  v.literal("deck"), // self-contained interactive HTML presentation (+PDF)
+  v.literal("style_preview") // title-slide PNGs for picking a theme
 );
 
 export const artifact = v.object({
-  format: v.string(), // pptx | pdf | docx | html
+  format: v.string(), // pptx | pdf | docx | html | png
   r2Key: v.string(),
   bytes: v.optional(v.number()),
+  // Which theme this artifact used — set on style_preview results.
+  theme: v.optional(v.string()),
   // Stable public URL, present only when the job requested `publish: true`
   // and the worker has a public bucket configured.
   publicUrl: v.optional(v.string()),

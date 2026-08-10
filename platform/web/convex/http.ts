@@ -36,15 +36,19 @@ async function authenticateAgent(
 //
 //   POST /agent/v1/jobs
 //   Authorization: Bearer sk_pres_...
-//   { "kind": "presentation" | "document" | "deck", "request": { ... } }
+//   { "kind": "presentation"|"document"|"deck"|"style_preview",
+//     "request": { ... } }
 //
 // For kind=presentation, `request` mirrors the Presenton engine's
 // GeneratePresentationRequest: { content, instructions?, n_slides?, template?,
 // language?, tone?, export_as: "pptx"|"pdf" }.
 // For kind=document, `request` is the doc-engine request: { content,
 // instructions?, template?, formats?: ["pdf","docx","html"] }.
-// For kind=deck, `request` is { content, instructions?, template? } and the
-// result is one self-contained interactive HTML file.
+// For kind=deck, `request` is { content, instructions?, template?,
+// formats?: ["html","pdf"], source_pptx_url? } — with source_pptx_url an
+// existing .pptx is converted instead of generated.
+// For kind=style_preview, `request` is { title, subtitle?, meta?, themes? }
+// and the result is one title-slide PNG per theme, each tagged with `theme`.
 //
 // Any kind accepts `publish: true` to also place the artifact at a stable
 // public URL (requires a public R2 bucket on the worker).
@@ -62,15 +66,9 @@ http.route({
     } catch {
       return json({ error: "Body must be JSON" }, 400);
     }
-    if (
-      body.kind !== "presentation" &&
-      body.kind !== "document" &&
-      body.kind !== "deck"
-    ) {
-      return json(
-        { error: 'kind must be "presentation", "document", or "deck"' },
-        400
-      );
+    const KINDS = ["presentation", "document", "deck", "style_preview"];
+    if (typeof body.kind !== "string" || !KINDS.includes(body.kind)) {
+      return json({ error: `kind must be one of ${KINDS.join(", ")}` }, 400);
     }
     if (typeof body.request !== "object" || body.request === null) {
       return json({ error: "request must be an object" }, 400);
@@ -79,7 +77,7 @@ http.route({
     const jobId = await ctx.runMutation(internal.jobs.createAndDispatch, {
       userId: agent.userId,
       apiKeyId: agent.keyId,
-      kind: body.kind,
+      kind: body.kind as "presentation" | "document" | "deck" | "style_preview",
       request: body.request,
     });
     return json({ job_id: jobId, status: "queued" }, 202);
@@ -154,6 +152,7 @@ http.route({
         r2_key: string;
         bytes?: number;
         public_url?: string;
+        theme?: string;
       }>;
     };
 
@@ -166,6 +165,7 @@ http.route({
         r2Key: a.r2_key,
         bytes: a.bytes,
         publicUrl: a.public_url,
+        theme: a.theme,
       })),
     });
     return json({ ok: true });

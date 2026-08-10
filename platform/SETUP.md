@@ -141,7 +141,7 @@ update `SITE_URL` in the production deployment's env.
 The doc-engine runs standalone:
 
 ```bash
-pip install python-docx pyyaml
+pip install python-docx python-pptx pyyaml
 cd platform
 
 # A4 document in a slide template's aesthetic
@@ -156,4 +156,21 @@ python -m doc_engine --artifact deck --template midnight-gold \
   --templates-dir ../templates --specs-dir design-specs \
   --out /tmp/deck-out
 open /tmp/deck-out/deck.html   # arrows/space to navigate
+
+# Same deck as a static PDF (one 16:9 page per slide, selectable text)
+python -m doc_engine --artifact deck --template midnight-gold \
+  --content-file examples/brief.md --formats html,pdf \
+  --templates-dir ../templates --specs-dir design-specs \
+  --out /tmp/deck-out --chromium /usr/bin/chromium
+
+# Style previews: one title-slide PNG per theme
+python -m doc_engine --artifact previews --content "Q3 Sales Report" \
+  --themes momentum,midnight-gold,swiss-crimson \
+  --templates-dir ../templates --specs-dir design-specs \
+  --out /tmp/previews --chromium /usr/bin/chromium
+
+# Convert an existing PowerPoint into a themed web deck
+python -m doc_engine --artifact deck --from-pptx ~/existing.pptx \
+  --template paper-zine --formats html \
+  --templates-dir ../templates --specs-dir design-specs --out /tmp/converted
 ```

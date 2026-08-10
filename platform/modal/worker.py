@@ -45,7 +45,13 @@ image = (
     modal.Image.from_registry(
         "ghcr.io/presenton/presenton:latest", add_python="3.11"
     )
-    .pip_install("boto3~=1.34", "fastapi[standard]", "python-docx", "pyyaml")
+    .pip_install(
+        "boto3~=1.34",
+        "fastapi[standard]",
+        "python-docx",
+        "python-pptx",
+        "pyyaml",
+    )
     .add_local_dir(str(REPO_ROOT / "platform" / "doc_engine"), "/opt/doc_engine")
     .add_local_dir(str(REPO_ROOT / "templates"), "/opt/presenton-templates")
     .add_local_dir(
@@ -73,6 +79,7 @@ def _r2_client():
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".pdf": "application/pdf",
+    ".png": "image/png",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
@@ -254,25 +261,70 @@ def _run_document_job(job_id: str, request: dict) -> list[dict]:
     ]
 
 
+def _fetch_source_file(url: str, suffix: str) -> Path:
+    """Download a caller-supplied source file (e.g. a .pptx to convert)."""
+    local = Path(f"/tmp/source{suffix}")
+    with urllib.request.urlopen(url, timeout=300) as res:
+        local.write_bytes(res.read())
+    return local
+
+
 def _run_deck_job(job_id: str, request: dict) -> list[dict]:
-    """Self-contained interactive HTML presentation (no engine boot needed)."""
+    """Self-contained interactive HTML presentation (no engine boot needed).
+
+    With `source_pptx_url`, an existing deck is converted instead of
+    generated: its text, bullets, tables, and notes are re-typeset in the
+    requested theme.
+    """
     import sys
 
     sys.path.insert(0, "/opt")
     from doc_engine.pipeline import generate_deck
 
     publish = bool(request.get("publish"))
+    source_url = request.get("source_pptx_url")
+    source_pptx = _fetch_source_file(source_url, ".pptx") if source_url else None
+
     outputs = generate_deck(
         content=request.get("content", ""),
         instructions=request.get("instructions"),
         template=request.get("template", "general"),
+        formats=request.get("formats", ["html"]),
+        source_pptx=source_pptx,
         out_dir="/tmp/deck-out",
+        chromium="/usr/bin/chromium",
         **_doc_engine_kwargs(),
     )
     return [
         _store(job_id, Path(path), "deck", fmt, publish)
         for fmt, path in outputs.items()
     ]
+
+
+def _run_style_preview_job(job_id: str, request: dict) -> list[dict]:
+    """Render one title-slide PNG per candidate theme so the caller can pick
+    a direction before paying for a full generation."""
+    import sys
+
+    sys.path.insert(0, "/opt")
+    from doc_engine.pipeline import generate_style_previews
+
+    publish = bool(request.get("publish"))
+    previews = generate_style_previews(
+        title=request.get("title") or request.get("content", "Untitled"),
+        subtitle=request.get("subtitle"),
+        meta=request.get("meta"),
+        themes=request.get("themes"),
+        out_dir="/tmp/preview-out",
+        chromium="/usr/bin/chromium",
+        **_doc_engine_kwargs(),
+    )
+    artifacts = []
+    for theme_name, path in previews.items():
+        record = _store(job_id, Path(path), f"preview-{theme_name}", "png", publish)
+        record["theme"] = theme_name
+        artifacts.append(record)
+    return artifacts
 
 
 @app.function(
@@ -292,6 +344,8 @@ def generate(payload: dict) -> None:
             artifacts = _run_presentation_job(job_id, payload["request"])
         elif kind == "deck":
             artifacts = _run_deck_job(job_id, payload["request"])
+        elif kind == "style_preview":
+            artifacts = _run_style_preview_job(job_id, payload["request"])
         else:
             artifacts = _run_document_job(job_id, payload["request"])
         _callback(

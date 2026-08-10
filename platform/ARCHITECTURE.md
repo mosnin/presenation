@@ -19,7 +19,10 @@ can delegate presentation and document creation to**.
                  │   • kind=presentation → boots the full     │
                  │     Presenton engine, drives its API       │
                  │   • kind=deck → doc_engine renders a       │
-                 │     self-contained interactive HTML deck   │
+                 │     self-contained HTML deck (+PDF), or    │
+                 │     converts an uploaded .pptx             │
+                 │   • kind=style_preview → title-slide PNGs  │
+                 │     across themes, for picking a look      │
                  │   • kind=document → doc_engine renders     │
                  │     themed A4 PDF/DOCX/HTML                │
                  └───────────────┬────────────────────────────┘
@@ -43,7 +46,8 @@ can delegate presentation and document creation to**.
   and `jobs` (kind, status, request, artifacts).
 - **Agent HTTP API** (`convex/http.ts`):
   - `POST /agent/v1/jobs` — `Authorization: Bearer sk_pres_…`, body
-    `{ kind: "presentation"|"deck"|"document", request: {...} }` →
+    `{ kind: "presentation"|"deck"|"document"|"style_preview",
+    request: {...} }` →
     `202 { job_id }`.
   - `GET /agent/v1/jobs/status?id=…` — status plus presigned R2 download
     URLs when finished.
@@ -69,7 +73,10 @@ One Modal app (`worker.py`), two functions:
     the engine's own `POST /api/v1/ppt/presentation/generate`, collects the
     PPTX/PDF.
   - `kind=deck`: runs the doc-engine's deck renderer — no engine boot, so
-    these jobs are fast and cheap.
+    these jobs are fast and cheap. `formats` may include `pdf` (a paged
+    16:9 print of the same deck, text still selectable), and
+    `source_pptx_url` converts an existing deck instead of generating one.
+  - `kind=style_preview`: screenshots one title slide per candidate theme.
   - `kind=document`: runs `doc_engine` (Chromium only) to render themed
     PDF/DOCX/HTML.
   - Uploads results to R2 with boto3 (plus a public-bucket copy when the job
@@ -122,7 +129,19 @@ the theme uses Google Fonts. The canvas is a fixed 1920×1080 stage scaled
 uniformly to the viewport — it letterboxes rather than reflowing, so a deck
 looks identical on a laptop and a phone. Keyboard, click, and swipe
 navigation; staggered entrance animations; a progress bar; deep links via
-`#4`; and full `prefers-reduced-motion` support.
+`#4`; and full `prefers-reduced-motion` support. A print variant of the same
+renderer emits one 16:9 page per slide, so `formats: ["pdf"]` produces a
+static deck with selectable text rather than screenshots.
+
+**Existing decks convert in** (`pptx_import.py`): python-pptx pulls titles,
+bullet structure, tables, and speaker notes out of a `.pptx` and maps them
+onto the deck model, so a deck someone already has can be re-typeset in any
+theme. Images and original positioning are deliberately dropped — the value
+is a coherent design system, not a photocopy.
+
+**Style previews** (`preview.py`) render the same title slide across
+candidate themes as PNGs, so the choice of look is made by looking rather
+than by guessing from a theme name.
 
 Both the fixed-stage technique and the design-spec theme format are adapted
 from the MIT-licensed
@@ -181,8 +200,7 @@ enough to produce distinctive decks without a layout engine.
 - Doc-engine phase 2 (see `doc_engine/DESIGN.md`): move document layouts into
   the Next.js renderer as React components so documents become editable in
   the Presenton UI exactly like slides.
-- Style previews ("show, don't tell"): a cheap job kind that renders 3 title
-  slides in different themes so a human or agent can pick before committing
-  to a full generation. Not built yet.
-- Deck → PDF: screenshot each slide via Chromium and combine, for users who
-  want a static copy of an HTML deck.
+- PPTX conversion drops images and original positioning; carrying images
+  through (extract to R2, place in the deck model) is the obvious next step.
+- Style previews render the title slide only; a second preview slide (a
+  content layout) would show more of each theme's personality.

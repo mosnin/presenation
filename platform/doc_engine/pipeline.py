@@ -7,7 +7,15 @@ import json
 from pathlib import Path
 
 from . import deck as deck_mod
-from . import deck_render, export, llm, render, structure
+from . import (
+    deck_render,
+    export,
+    llm,
+    pptx_import,
+    preview,
+    render,
+    structure,
+)
 from .theme import resolve_theme
 
 
@@ -60,25 +68,65 @@ def generate_deck(
     templates_dir: str | Path = "templates",
     out_dir: str | Path = "out",
     specs_dir: str | Path | None = None,
+    formats: list[str] | None = None,
+    source_pptx: str | Path | None = None,
+    chromium: str = "/usr/bin/chromium",
 ) -> dict[str, str]:
-    """Generate a self-contained interactive HTML presentation.
+    """Generate a presentation deck.
 
-    Returns {"html": output_path}. With an LLM configured the content is
-    expanded slide by slide; otherwise markdown maps deterministically onto
-    slide layouts (see deck.py).
+    Returns {format: output_path} for the requested formats (`html`, `pdf`).
+    Content comes from `source_pptx` when converting an existing deck, from
+    an LLM when one is configured, or deterministically from markdown.
     """
+    formats = formats or ["html"]
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if llm.llm_configured():
+    if source_pptx:
+        deck = pptx_import.pptx_to_deck(source_pptx)
+    elif llm.llm_configured():
         deck = llm.generate_deck_structure(content, instructions)
     else:
         deck = deck_mod.markdown_to_deck(content)
 
     theme = resolve_theme(template, templates_dir=templates_dir, specs_dir=specs_dir)
-    html_text = deck_render.render_deck_html(deck, theme)
-
-    out_path = out_dir / "deck.html"
-    out_path.write_text(html_text)
     (out_dir / "deck.json").write_text(json.dumps(deck, indent=2))
-    return {"html": str(out_path)}
+
+    outputs: dict[str, str] = {}
+    if "html" in formats:
+        html_path = out_dir / "deck.html"
+        html_path.write_text(deck_render.render_deck_html(deck, theme))
+        outputs["html"] = str(html_path)
+    if "pdf" in formats:
+        outputs["pdf"] = str(
+            export.html_to_pdf(
+                deck_render.render_deck_html(deck, theme, print_mode=True),
+                out_dir / "deck.pdf",
+                chromium,
+                virtual_time_budget_ms=8000,
+            )
+        )
+    return outputs
+
+
+def generate_style_previews(
+    title: str,
+    subtitle: str | None = None,
+    meta: str | None = None,
+    themes: list[str] | None = None,
+    templates_dir: str | Path = "templates",
+    specs_dir: str | Path | None = None,
+    out_dir: str | Path = "out",
+    chromium: str = "/usr/bin/chromium",
+) -> dict[str, str]:
+    """Render one title-slide PNG per candidate theme. {theme: png_path}."""
+    return preview.render_previews(
+        title=title,
+        subtitle=subtitle,
+        meta=meta,
+        themes=themes,
+        templates_dir=templates_dir,
+        specs_dir=specs_dir,
+        out_dir=out_dir,
+        chromium=chromium,
+    )

@@ -1,6 +1,6 @@
 ---
 name: presenton-platform
-description: Delegate presentation and document creation to a Presenton Platform instance. Use when the user asks for a slide deck, PPTX, pitch deck, report, brief, one-pager, or PDF/DOCX/HTML document and a PRESENTON_API_KEY is available. The platform generates the file remotely and returns a download URL — no local rendering, no PowerPoint install.
+description: Delegate presentation and document creation to a Presenton Platform instance. Use when the user asks for a slide deck, PPTX, pitch deck, report, brief, one-pager, or PDF/DOCX/HTML document, wants an existing PowerPoint converted to a web deck, or wants to compare visual styles — and a PRESENTON_API_KEY is available. The platform generates the file remotely and returns a download URL — no local rendering, no PowerPoint install.
 ---
 
 # Presenton Platform
@@ -38,8 +38,18 @@ guessing a URL. Never print the key back to the user or write it into files.
 | Kind | Produces | Use for |
 | --- | --- | --- |
 | `presentation` | `.pptx` or `.pdf` | Anything the user will open in PowerPoint/Keynote or needs to edit later. The default for "slide deck". |
-| `deck` | one self-contained `.html` file | Something to present in a browser or share as a link. Keyboard/touch navigation, animated. Not editable in PowerPoint. |
+| `deck` | self-contained `.html` and/or `.pdf` | Something to present in a browser or share as a link. Keyboard/touch navigation, animated. Also converts an existing `.pptx`. Not editable in PowerPoint. |
 | `document` | `.pdf`, `.docx`, `.html` | Reports, briefs, one-pagers, memos — prose in A4, not slides. |
+| `style_preview` | one `.png` per theme | Deciding what it should look like, before generating anything real. |
+
+### Style previews first, when the look matters
+
+If the user cares about the design and hasn't named a theme, submit a
+`style_preview` job before the real one. It returns a title-slide PNG per
+theme, each tagged with `theme`. Show those to the user, let them pick, then
+submit the real job with that `template`. This is much cheaper than
+generating three full decks. Skip it when the user already named a theme or
+just wants the file.
 
 ## Themes
 
@@ -82,9 +92,16 @@ to anyone with the URL).
 
 - `presentation`: `export_as` (`"pptx"` | `"pdf"`, default `pptx`),
   `n_slides` (omit to let the model choose), `language`, `tone`.
-- `deck`: no extra fields.
+- `deck`: `formats` (array of `"html"`, `"pdf"`; default `["html"]`) and
+  `source_pptx_url` — a URL to an existing `.pptx` to convert instead of
+  generating. Conversion keeps text, bullets, tables, and speaker notes;
+  original images and exact positioning are not carried over, since the
+  point is to re-typeset the content in a coherent design system.
 - `document`: `formats` (array of `"pdf"`, `"docx"`, `"html"`; default
   `["pdf"]`).
+- `style_preview`: `title` (required), `subtitle`, `meta`, and `themes` (an
+  array; omit for a spread across light/dark and serif/sans). Ignores
+  `template` — it renders every candidate.
 
 ## Polling
 
@@ -104,6 +121,15 @@ curl -sS "$PRESENTON_PLATFORM_URL/agent/v1/jobs/status?id=$JOB_ID" \
     { "format": "pptx", "url": "https://…", "public_url": "https://…" }
   ]
 }
+```
+
+`style_preview` results carry a `theme` on each artifact:
+
+```json
+{ "artifacts": [
+  { "format": "png", "theme": "momentum", "url": "https://…" },
+  { "format": "png", "theme": "midnight-gold", "url": "https://…" }
+] }
 ```
 
 Poll about every 5 seconds. Generation normally takes 30-90 seconds, and the

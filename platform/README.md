@@ -20,13 +20,14 @@ API — and extends the product beyond PPTX to **interactive HTML decks** and
 - **[doc_engine/DESIGN.md](doc_engine/DESIGN.md)** — the documents/decks roadmap
 - **[examples/](examples)** — agent client + sample content
 
-Three artifact kinds:
+Four artifact kinds:
 
 | Kind | Output | Engine |
 | --- | --- | --- |
 | `presentation` | editable `.pptx` / `.pdf` | Presenton engine on Modal |
-| `deck` | one self-contained interactive `.html` | doc-engine deck renderer |
+| `deck` | self-contained interactive `.html`, static `.pdf`; converts existing `.pptx` | doc-engine deck renderer |
 | `document` | A4 `.pdf` / `.docx` / `.html` | doc-engine |
+| `style_preview` | one title-slide `.png` per theme | doc-engine + Chromium |
 
 Agent API in two calls:
 

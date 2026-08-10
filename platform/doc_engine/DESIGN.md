@@ -38,8 +38,21 @@ layouts. A "momentum" report visibly belongs to the same family as a
   keyboard/click/swipe navigation, staggered reveals, progress bar, `#n`
   deep links, `prefers-reduced-motion` honored.
 
-The fixed-stage technique and the design-spec format are adapted from the
-MIT-licensed [frontend-slides](https://github.com/zarazhangrui/frontend-slides).
+- `deck_render.render_deck_html(..., print_mode=True)` — a paged variant
+  (one 16:9 page per slide, no navigation chrome, no animation) printed to a
+  vector PDF, so a static copy keeps selectable text instead of being a pile
+  of screenshots.
+- `pptx_import.py` — python-pptx pulls titles, bullets, tables, and speaker
+  notes out of an existing `.pptx` and maps them onto the deck model, so a
+  deck someone already has can be re-typeset in any theme. Images and
+  original positioning are dropped by design.
+- `preview.py` — renders the same title slide across candidate themes as
+  PNGs ("show, don't tell"), so the look is chosen by looking. One Chromium
+  screenshot per candidate; no LLM call, no engine boot.
+
+The fixed-stage technique, the design-spec format, and the preview-driven
+style discovery are adapted from the MIT-licensed
+[frontend-slides](https://github.com/zarazhangrui/frontend-slides).
 
 Scope limits: single-column A4 documents, one cover style, no images/charts,
 DOCX is coarser than the PDF (Word styles, not CSS). Decks have eight
@@ -66,8 +79,11 @@ layouts and no per-slide art direction. Paged output always prints on white
 5. **New artifact kinds.** The same tokens extend naturally to one-page
    summaries, letterheads, and invoices — anything A4 — and the platform's
    `kind` field is already open-ended.
-6. **Style previews.** Render three title slides in three themes as PNGs so
-   the user picks a direction by looking rather than by naming a template
-   ("show, don't tell"). Cheap to run: one Chromium screenshot per candidate.
-7. **Deck art direction.** Per-slide background treatments and image support,
-   plus a deck→PDF path (screenshot each slide, combine) for static sharing.
+6. **Deck art direction.** Per-slide background treatments, image support,
+   and richer layout variety — the current eight layouts are deliberately
+   plain so every theme renders predictably.
+7. **PPTX conversion fidelity.** Carry original images through (extract to
+   R2, place them in the deck model) and infer stats/quote layouts from
+   source formatting rather than mapping everything to bullets.
+8. **Preview depth.** Previews render the title slide only; a second preview
+   slide with a content layout would show more of each theme's personality.

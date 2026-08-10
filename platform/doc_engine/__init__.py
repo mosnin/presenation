@@ -10,6 +10,6 @@ deck. Themes may also be declared directly as YAML design specs (see
 stages that the slide templates don't cover.
 """
 
-from .pipeline import generate_deck, generate_document
+from .pipeline import generate_deck, generate_document, generate_style_previews
 
-__all__ = ["generate_deck", "generate_document"]
+__all__ = ["generate_deck", "generate_document", "generate_style_previews"]
