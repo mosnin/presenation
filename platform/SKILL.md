@@ -94,9 +94,9 @@ to anyone with the URL).
   `n_slides` (omit to let the model choose), `language`, `tone`.
 - `deck`: `formats` (array of `"html"`, `"pdf"`; default `["html"]`) and
   `source_pptx_url` — a URL to an existing `.pptx` to convert instead of
-  generating. Conversion keeps text, bullets, tables, and speaker notes;
-  original images and exact positioning are not carried over, since the
-  point is to re-typeset the content in a coherent design system.
+  generating. Conversion keeps text, bullets, tables, speaker notes, and
+  embedded images; exact positioning is not carried over, since the point is
+  to re-typeset the content in a coherent design system.
 - `document`: `formats` (array of `"pdf"`, `"docx"`, `"html"`; default
   `["pdf"]`).
 - `style_preview`: `title` (required), `subtitle`, `meta`, and `themes` (an

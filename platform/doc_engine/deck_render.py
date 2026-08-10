@@ -275,6 +275,56 @@ td {{
   border-bottom: 2px solid var(--rule);
 }}
 
+/* Image layouts. Pictures are inlined as data URIs so the deck stays one
+   portable file; object-fit keeps them from distorting at any aspect. */
+.slide.layout-image {{ padding: 90px 140px; }}
+
+.slide.layout-image .figure {{
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40px;
+}}
+
+.slide.layout-image img {{
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}}
+
+.split {{
+  display: flex;
+  gap: 80px;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+}}
+
+.split .copy {{ flex: 1.1; }}
+
+.split .art {{
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}}
+
+.split .art img {{
+  max-width: 100%;
+  max-height: 620px;
+  object-fit: contain;
+}}
+
+.split ul.bullets {{ font-size: 38px; }}
+
+.split ul.bullets li {{ padding: 22px 0 22px 56px; }}
+
+.split ul.bullets li::before {{ top: 38px; }}
+
 .slide.layout-closing {{ align-items: flex-start; text-align: left; }}
 
 .slide.layout-closing .subtitle {{ margin-top: 56px; }}
@@ -405,6 +455,35 @@ def _esc(value: object) -> str:
     return html.escape(str(value)) if value is not None else ""
 
 
+_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+def _image_src(path: str | None) -> str | None:
+    """Inline an image as a data URI, keeping the deck a single file.
+
+    A missing or unreadable image yields None so the slide renders without
+    it rather than showing a broken-image icon.
+    """
+    if not path:
+        return None
+    file = Path(path)
+    if not file.exists():
+        return None
+    mime = _MIME_BY_SUFFIX.get(file.suffix.lower(), "image/png")
+    try:
+        data = base64.b64encode(file.read_bytes()).decode()
+    except OSError:
+        return None
+    return f"data:{mime};base64,{data}"
+
+
 def _render_slide(slide: dict) -> str:
     layout = slide.get("layout", "prose")
     parts: list[str] = []
@@ -469,6 +548,32 @@ def _render_slide(slide: dict) -> str:
             f'<div class="reveal"><table><thead><tr>{head}</tr></thead>'
             f"<tbody>{rows}</tbody></table></div>"
         )
+    elif layout == "image":
+        parts.append(
+            f'<h2 class="heading-font reveal">{_esc(slide.get("heading"))}</h2>'
+        )
+        src = _image_src(slide.get("image"))
+        if src:
+            parts.append(
+                f'<div class="figure reveal">'
+                f'<img src="{src}" alt="{_esc(slide.get("heading"))}"></div>'
+            )
+    elif layout == "image_text":
+        parts.append(
+            f'<h2 class="heading-font reveal">{_esc(slide.get("heading"))}</h2>'
+        )
+        items = "".join(
+            f'<li class="reveal">{_esc(item)}</li>' for item in slide.get("items", [])
+        )
+        copy = f'<div class="copy"><ul class="bullets">{items}</ul></div>'
+        src = _image_src(slide.get("image"))
+        art = (
+            f'<div class="art reveal"><img src="{src}" '
+            f'alt="{_esc(slide.get("heading"))}"></div>'
+            if src
+            else ""
+        )
+        parts.append(f'<div class="split">{copy}{art}</div>')
     elif layout == "closing":
         parts.append('<div class="accent-bar reveal"></div>')
         parts.append(

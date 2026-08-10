@@ -134,10 +134,12 @@ renderer emits one 16:9 page per slide, so `formats: ["pdf"]` produces a
 static deck with selectable text rather than screenshots.
 
 **Existing decks convert in** (`pptx_import.py`): python-pptx pulls titles,
-bullet structure, tables, and speaker notes out of a `.pptx` and maps them
-onto the deck model, so a deck someone already has can be re-typeset in any
-theme. Images and original positioning are deliberately dropped — the value
-is a coherent design system, not a photocopy.
+bullet structure, tables, speaker notes, and embedded images out of a
+`.pptx` and maps them onto the deck model, so a deck someone already has can
+be re-typeset in any theme. Pictures are downscaled and inlined as data URIs
+(the deck stays one file); images under 80px are skipped as icons or
+spacers. Original positioning is deliberately dropped — the value is a
+coherent design system, not a photocopy.
 
 **Style previews** (`preview.py`) render the same title slide across
 candidate themes as PNGs, so the choice of look is made by looking rather
@@ -200,7 +202,10 @@ enough to produce distinctive decks without a layout engine.
 - Doc-engine phase 2 (see `doc_engine/DESIGN.md`): move document layouts into
   the Next.js renderer as React components so documents become editable in
   the Presenton UI exactly like slides.
-- PPTX conversion drops images and original positioning; carrying images
-  through (extract to R2, place in the deck model) is the obvious next step.
+- Inlining images keeps decks self-contained but inflates them; an
+  image-heavy conversion can reach several MB. Serving images from R2 and
+  referencing them would trade portability for size.
 - Style previews render the title slide only; a second preview slide (a
   content layout) would show more of each theme's personality.
+- Converted decks map source formatting onto bullets; inferring stats and
+  quote layouts from the original would read better.

@@ -50,6 +50,7 @@ image = (
         "fastapi[standard]",
         "python-docx",
         "python-pptx",
+        "pillow",
         "pyyaml",
     )
     .add_local_dir(str(REPO_ROOT / "platform" / "doc_engine"), "/opt/doc_engine")

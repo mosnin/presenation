@@ -25,7 +25,7 @@ Four artifact kinds:
 | Kind | Output | Engine |
 | --- | --- | --- |
 | `presentation` | editable `.pptx` / `.pdf` | Presenton engine on Modal |
-| `deck` | self-contained interactive `.html`, static `.pdf`; converts existing `.pptx` | doc-engine deck renderer |
+| `deck` | self-contained interactive `.html`, static `.pdf`; converts existing `.pptx` (with images) | doc-engine deck renderer |
 | `document` | A4 `.pdf` / `.docx` / `.html` | doc-engine |
 | `style_preview` | one title-slide `.png` per theme | doc-engine + Chromium |
 

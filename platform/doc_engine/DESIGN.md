@@ -42,10 +42,11 @@ layouts. A "momentum" report visibly belongs to the same family as a
   (one 16:9 page per slide, no navigation chrome, no animation) printed to a
   vector PDF, so a static copy keeps selectable text instead of being a pile
   of screenshots.
-- `pptx_import.py` — python-pptx pulls titles, bullets, tables, and speaker
-  notes out of an existing `.pptx` and maps them onto the deck model, so a
-  deck someone already has can be re-typeset in any theme. Images and
-  original positioning are dropped by design.
+- `pptx_import.py` — python-pptx pulls titles, bullets, tables, speaker
+  notes, and embedded images out of an existing `.pptx` and maps them onto
+  the deck model, so a deck someone already has can be re-typeset in any
+  theme. Pictures are downscaled and inlined as data URIs; sub-80px images
+  are skipped as icons. Original positioning is dropped by design.
 - `preview.py` — renders the same title slide across candidate themes as
   PNGs ("show, don't tell"), so the look is chosen by looking. One Chromium
   screenshot per candidate; no LLM call, no engine boot.
@@ -82,8 +83,8 @@ layouts and no per-slide art direction. Paged output always prints on white
 6. **Deck art direction.** Per-slide background treatments, image support,
    and richer layout variety — the current eight layouts are deliberately
    plain so every theme renders predictably.
-7. **PPTX conversion fidelity.** Carry original images through (extract to
-   R2, place them in the deck model) and infer stats/quote layouts from
-   source formatting rather than mapping everything to bullets.
+7. **PPTX conversion fidelity.** Infer stats and quote layouts from source
+   formatting rather than mapping most content to bullets, and handle
+   grouped shapes and SmartArt (currently skipped).
 8. **Preview depth.** Previews render the title slide only; a second preview
    slide with a content layout would show more of each theme's personality.

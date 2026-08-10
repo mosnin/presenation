@@ -83,7 +83,11 @@ def generate_deck(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if source_pptx:
-        deck = pptx_import.pptx_to_deck(source_pptx)
+        # Extracted images live under the output dir; they are inlined into
+        # the HTML, so they are intermediates rather than deliverables.
+        deck = pptx_import.pptx_to_deck(
+            source_pptx, images_dir=out_dir / "images"
+        )
     elif llm.llm_configured():
         deck = llm.generate_deck_structure(content, instructions)
     else:
