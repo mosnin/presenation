@@ -8,7 +8,7 @@ import {
 } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { jobKind, jobStatus } from "./schema";
+import { artifact, jobKind, jobStatus } from "./schema";
 import { r2 } from "./r2";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -68,7 +68,7 @@ async function createAndDispatchHelper(
   args: {
     userId: Id<"users">;
     apiKeyId?: Id<"apiKeys">;
-    kind: "presentation" | "document";
+    kind: "presentation" | "document" | "deck";
     request: unknown;
   }
 ): Promise<Id<"jobs">> {
@@ -94,15 +94,7 @@ export const setStatus = internalMutation({
     status: jobStatus,
     error: v.optional(v.string()),
     modalCallId: v.optional(v.string()),
-    artifacts: v.optional(
-      v.array(
-        v.object({
-          format: v.string(),
-          r2Key: v.string(),
-          bytes: v.optional(v.number()),
-        })
-      )
-    ),
+    artifacts: v.optional(v.array(artifact)),
   },
   handler: async (ctx, { jobId, ...patch }) => {
     const done = patch.status === "succeeded" || patch.status === "failed";
@@ -120,7 +112,7 @@ export const downloadUrls = action({
   handler: async (
     ctx,
     { jobId }
-  ): Promise<Array<{ format: string; url: string }>> => {
+  ): Promise<Array<{ format: string; url: string; public_url?: string }>> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not signed in");
     const job: Doc<"jobs"> | null = await ctx.runQuery(api.jobs.get, { jobId });
@@ -129,6 +121,7 @@ export const downloadUrls = action({
       job.artifacts.map(async (a) => ({
         format: a.format,
         url: await r2.getUrl(a.r2Key, { expiresIn: SIGNED_URL_TTL_SECONDS }),
+        ...(a.publicUrl ? { public_url: a.publicUrl } : {}),
       }))
     );
   },
@@ -141,7 +134,7 @@ export const downloadUrlsInternal = action({
   handler: async (
     ctx,
     { jobId }
-  ): Promise<Array<{ format: string; url: string }>> => {
+  ): Promise<Array<{ format: string; url: string; public_url?: string }>> => {
     const job: Doc<"jobs"> | null = await ctx.runQuery(
       internal.jobs.getInternal,
       { jobId }
@@ -151,6 +144,7 @@ export const downloadUrlsInternal = action({
       job.artifacts.map(async (a) => ({
         format: a.format,
         url: await r2.getUrl(a.r2Key, { expiresIn: SIGNED_URL_TTL_SECONDS }),
+        ...(a.publicUrl ? { public_url: a.publicUrl } : {}),
       }))
     );
   },

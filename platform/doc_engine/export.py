@@ -50,6 +50,7 @@ def doc_to_docx(doc: dict, theme: Theme, out_path: str | Path) -> Path:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Pt, RGBColor
 
+    theme = theme.for_print()  # Word pages are white paper too
     accent = RGBColor(*_hex_to_rgb(theme.accent))
     accent_dark = RGBColor(*_hex_to_rgb(theme.accent_dark))
     ink = RGBColor(*_hex_to_rgb(theme.ink))

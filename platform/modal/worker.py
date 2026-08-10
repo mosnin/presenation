@@ -12,6 +12,7 @@ Requires a Modal secret named `presenton-worker` containing:
         as the repo root .env.example — the engine runs headless here, so
         CAN_CHANGE_KEYS is forced to false)
     R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+    R2_PUBLIC_BUCKET, R2_PUBLIC_BASE_URL (optional; enable `publish: true`)
     MODAL_CALLBACK_SECRET (same value as the Convex env var)
 
 The submit endpoint is protected with Modal proxy auth: create a proxy auth
@@ -44,9 +45,12 @@ image = (
     modal.Image.from_registry(
         "ghcr.io/presenton/presenton:latest", add_python="3.11"
     )
-    .pip_install("boto3~=1.34", "fastapi[standard]")
+    .pip_install("boto3~=1.34", "fastapi[standard]", "python-docx", "pyyaml")
     .add_local_dir(str(REPO_ROOT / "platform" / "doc_engine"), "/opt/doc_engine")
     .add_local_dir(str(REPO_ROOT / "templates"), "/opt/presenton-templates")
+    .add_local_dir(
+        str(REPO_ROOT / "platform" / "design-specs"), "/opt/presenton-design-specs"
+    )
 )
 
 app = modal.App("presenton-worker")
@@ -66,11 +70,45 @@ def _r2_client():
     )
 
 
+_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".pdf": "application/pdf",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
 def _upload_to_r2(local_path: Path, r2_key: str) -> int:
     client = _r2_client()
     size = local_path.stat().st_size
-    client.upload_file(str(local_path), os.environ["R2_BUCKET"], r2_key)
+    extra = {}
+    content_type = _CONTENT_TYPES.get(local_path.suffix.lower())
+    if content_type:
+        extra["ContentType"] = content_type
+    client.upload_file(
+        str(local_path), os.environ["R2_BUCKET"], r2_key, ExtraArgs=extra or None
+    )
     return size
+
+
+def _publish_to_r2(local_path: Path, r2_key: str) -> str | None:
+    """Copy an artifact into the public R2 bucket and return its stable URL.
+
+    Requires R2_PUBLIC_BUCKET (a bucket with public access / custom domain)
+    and R2_PUBLIC_BASE_URL (e.g. https://pub-xxxx.r2.dev or your domain).
+    Returns None when publishing is not configured.
+    """
+    bucket = os.environ.get("R2_PUBLIC_BUCKET")
+    base_url = os.environ.get("R2_PUBLIC_BASE_URL", "").rstrip("/")
+    if not bucket or not base_url:
+        return None
+    client = _r2_client()
+    extra = {}
+    content_type = _CONTENT_TYPES.get(local_path.suffix.lower())
+    if content_type:
+        extra["ContentType"] = content_type
+    client.upload_file(str(local_path), bucket, r2_key, ExtraArgs=extra or None)
+    return f"{base_url}/{r2_key}"
 
 
 def _callback(callback_url: str, payload: dict) -> None:
@@ -142,7 +180,34 @@ def _engine_generate(request: dict) -> Path:
     return local
 
 
+def _store(
+    job_id: str, local_path: Path, name: str, fmt: str, publish: bool
+) -> dict:
+    """Upload one artifact to the private bucket, optionally publish a public
+    copy, and return the artifact record sent back to Convex."""
+    r2_key = f"jobs/{job_id}/{name}.{fmt}"
+    size = _upload_to_r2(local_path, r2_key)
+    record = {"format": fmt, "r2_key": r2_key, "bytes": size}
+    if publish:
+        public_url = _publish_to_r2(local_path, r2_key)
+        if public_url:
+            record["public_url"] = public_url
+    return record
+
+
+def _doc_engine_kwargs() -> dict:
+    return {
+        "templates_dir": "/opt/presenton-templates",
+        "specs_dir": "/opt/presenton-design-specs",
+    }
+
+
 def _run_presentation_job(job_id: str, request: dict) -> list[dict]:
+    # The Presenton engine exports PPTX/PDF. An HTML deck is produced by the
+    # doc-engine's deck renderer instead, so route that here.
+    if request.get("export_as") == "html":
+        return _run_deck_job(job_id, request)
+
     engine_request = {
         "content": request.get("content", ""),
         "instructions": request.get("instructions"),
@@ -157,13 +222,12 @@ def _run_presentation_job(job_id: str, request: dict) -> list[dict]:
     if request.get("tone"):
         engine_request["tone"] = request["tone"]
 
+    publish = bool(request.get("publish"))
     proc = _boot_engine()
     try:
         artifact = _engine_generate(engine_request)
         fmt = artifact.suffix.lstrip(".") or engine_request["export_as"]
-        r2_key = f"jobs/{job_id}/presentation.{fmt}"
-        size = _upload_to_r2(artifact, r2_key)
-        return [{"format": fmt, "r2_key": r2_key, "bytes": size}]
+        return [_store(job_id, artifact, "presentation", fmt, publish)]
     finally:
         proc.terminate()
 
@@ -174,21 +238,41 @@ def _run_document_job(job_id: str, request: dict) -> list[dict]:
     sys.path.insert(0, "/opt")
     from doc_engine.pipeline import generate_document
 
+    publish = bool(request.get("publish"))
     outputs = generate_document(
         content=request.get("content", ""),
         instructions=request.get("instructions"),
         template=request.get("template", "general"),
         formats=request.get("formats", ["pdf"]),
-        templates_dir="/opt/presenton-templates",
         out_dir="/tmp/doc-out",
         chromium="/usr/bin/chromium",
+        **_doc_engine_kwargs(),
     )
-    artifacts = []
-    for fmt, path in outputs.items():
-        r2_key = f"jobs/{job_id}/document.{fmt}"
-        size = _upload_to_r2(Path(path), r2_key)
-        artifacts.append({"format": fmt, "r2_key": r2_key, "bytes": size})
-    return artifacts
+    return [
+        _store(job_id, Path(path), "document", fmt, publish)
+        for fmt, path in outputs.items()
+    ]
+
+
+def _run_deck_job(job_id: str, request: dict) -> list[dict]:
+    """Self-contained interactive HTML presentation (no engine boot needed)."""
+    import sys
+
+    sys.path.insert(0, "/opt")
+    from doc_engine.pipeline import generate_deck
+
+    publish = bool(request.get("publish"))
+    outputs = generate_deck(
+        content=request.get("content", ""),
+        instructions=request.get("instructions"),
+        template=request.get("template", "general"),
+        out_dir="/tmp/deck-out",
+        **_doc_engine_kwargs(),
+    )
+    return [
+        _store(job_id, Path(path), "deck", fmt, publish)
+        for fmt, path in outputs.items()
+    ]
 
 
 @app.function(
@@ -202,9 +286,12 @@ def generate(payload: dict) -> None:
     """payload: { job_id, kind, request, callback_url }"""
     job_id = payload["job_id"]
     callback_url = payload["callback_url"]
+    kind = payload["kind"]
     try:
-        if payload["kind"] == "presentation":
+        if kind == "presentation":
             artifacts = _run_presentation_job(job_id, payload["request"])
+        elif kind == "deck":
+            artifacts = _run_deck_job(job_id, payload["request"])
         else:
             artifacts = _run_document_job(job_id, payload["request"])
         _callback(

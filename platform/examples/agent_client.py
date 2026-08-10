@@ -65,3 +65,15 @@ if __name__ == "__main__":
         },
     )
     print(json.dumps(result, indent=2))
+
+    # A self-contained interactive HTML deck in a design-spec theme,
+    # published to a stable public URL anyone can open:
+    result = create_artifact(
+        "deck",
+        {
+            "content": "Five lessons from our first year of enterprise sales",
+            "template": "midnight-gold",
+            "publish": True,
+        },
+    )
+    print(json.dumps(result, indent=2))

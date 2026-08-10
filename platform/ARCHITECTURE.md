@@ -18,6 +18,8 @@ can delegate presentation and document creation to**.
                  │   • container from ghcr.io/presenton image │
                  │   • kind=presentation → boots the full     │
                  │     Presenton engine, drives its API       │
+                 │   • kind=deck → doc_engine renders a       │
+                 │     self-contained interactive HTML deck   │
                  │   • kind=document → doc_engine renders     │
                  │     themed A4 PDF/DOCX/HTML                │
                  └───────────────┬────────────────────────────┘
@@ -25,6 +27,8 @@ can delegate presentation and document creation to**.
                                  ▼
                  ┌────────────────────────────────────────────┐
                  │  Cloudflare R2 (S3-compatible storage)     │
+                 │   private bucket → presigned download URLs │
+                 │   public bucket  → stable shareable links  │
                  │   free tier: 10 GB storage, zero egress    │
                  └────────────────────────────────────────────┘
 ```
@@ -39,7 +43,8 @@ can delegate presentation and document creation to**.
   and `jobs` (kind, status, request, artifacts).
 - **Agent HTTP API** (`convex/http.ts`):
   - `POST /agent/v1/jobs` — `Authorization: Bearer sk_pres_…`, body
-    `{ kind: "presentation"|"document", request: {...} }` → `202 { job_id }`.
+    `{ kind: "presentation"|"deck"|"document", request: {...} }` →
+    `202 { job_id }`.
   - `GET /agent/v1/jobs/status?id=…` — status plus presigned R2 download
     URLs when finished.
   - `POST /modal/callback` — worker completion webhook, HMAC-SHA256 signed
@@ -63,17 +68,20 @@ One Modal app (`worker.py`), two functions:
   - `kind=presentation`: boots `node /app/start.js`, waits for health, calls
     the engine's own `POST /api/v1/ppt/presentation/generate`, collects the
     PPTX/PDF.
-  - `kind=document`: runs `doc_engine` (no engine boot needed — just
-    Chromium) to render themed PDF/DOCX/HTML.
-  - Uploads results to R2 with boto3, then POSTs the signed callback.
+  - `kind=deck`: runs the doc-engine's deck renderer — no engine boot, so
+    these jobs are fast and cheap.
+  - `kind=document`: runs `doc_engine` (Chromium only) to render themed
+    PDF/DOCX/HTML.
+  - Uploads results to R2 with boto3 (plus a public-bucket copy when the job
+    set `publish: true`), then POSTs the signed callback.
 
 Jobs are ephemeral and isolated per container invocation — this is the
 "sandbox" property: user-supplied content never touches shared state, and the
 container is discarded after the job.
 
-### `platform/doc_engine` — documents in the template's aesthetic
+### `platform/doc_engine` — decks and documents in the template's aesthetic
 
-The product extension beyond slides. Key idea: **a Presenton slide template
+The product extension beyond PPTX. Key idea: **a Presenton slide template
 already encodes its design system** in `templates/<name>/template.json`
 (font files, families, sizes, and every color used). `doc_engine/theme.py`
 extracts theme tokens from it:
@@ -97,6 +105,31 @@ Verified locally: the same markdown brief rendered with `momentum`,
 `executive`, `modern`, and `general` correctly picks up each template's
 fonts and palette (e.g. Momentum → Anton headings, Lato body, #1A3DB3).
 
+**Themes can also come from design specs** (`platform/design-specs/*.md`) —
+~40 lines of YAML declaring colors, semantic aliases, typography roles, and
+Google Fonts. A spec is far cheaper to author than a coordinate-based
+`template.json`, and can define dark stages that slide templates don't cover.
+`resolve_theme()` checks specs first, then falls back to template extraction,
+so `momentum` and `midnight-gold` are both just theme names to callers. Specs
+cannot drive PPTX export (that needs the engine's layout geometry), so they
+apply to `deck` and `document` jobs.
+
+**Interactive HTML decks** (`deck.py` + `deck_render.py`) are a third output.
+A deck model (title / section / bullets / prose / stats / quote / table /
+closing slides) is rendered into **one self-contained HTML file**: inline CSS
+and JS, template fonts embedded as data URIs, no network dependency unless
+the theme uses Google Fonts. The canvas is a fixed 1920×1080 stage scaled
+uniformly to the viewport — it letterboxes rather than reflowing, so a deck
+looks identical on a laptop and a phone. Keyboard, click, and swipe
+navigation; staggered entrance animations; a progress bar; deep links via
+`#4`; and full `prefers-reduced-motion` support.
+
+Both the fixed-stage technique and the design-spec theme format are adapted
+from the MIT-licensed
+[frontend-slides](https://github.com/zarazhangrui/frontend-slides) project,
+which demonstrated that a declarative spec plus a scaled fixed canvas is
+enough to produce distinctive decks without a layout engine.
+
 ## Job lifecycle
 
 1. Agent POSTs to `/agent/v1/jobs` with an API key → job `queued`.
@@ -116,7 +149,10 @@ fonts and palette (e.g. Momentum → Anton headings, Lato body, #1A3DB3).
 - Callback: HMAC-SHA256 over the raw body with a shared secret;
   constant-time comparison.
 - Files: private R2 bucket; access only through short-lived presigned URLs
-  scoped per job; job ownership checked on every read.
+  scoped per job; job ownership checked on every read. `publish: true` is
+  opt-in per job and copies that artifact into a separate **public** bucket —
+  anything published is world-readable to anyone with the URL, so the API
+  never publishes by default.
 - Engine containers run with `CAN_CHANGE_KEYS=false` and `DISABLE_AUTH=true`
   (the platform authenticates before Modal is ever invoked; the engine is
   never internet-reachable).
@@ -137,6 +173,7 @@ fonts and palette (e.g. Momentum → Anton headings, Lato body, #1A3DB3).
 - Modal cold boot of the full engine is slow (image pull + engine start).
   Mitigations: `modal.Volume` for app_data, `min_containers=1` when traffic
   justifies it, or slimming the engine image to FastAPI+renderer only.
+  `deck` and `document` jobs skip the engine entirely and are much faster.
 - The engine's LLM keys currently come from the Modal secret (platform-wide).
   Per-tenant BYO keys would be passed through the job request instead.
 - `GET /agent/v1/jobs/status` polling works everywhere; a webhook-out option
@@ -144,3 +181,8 @@ fonts and palette (e.g. Momentum → Anton headings, Lato body, #1A3DB3).
 - Doc-engine phase 2 (see `doc_engine/DESIGN.md`): move document layouts into
   the Next.js renderer as React components so documents become editable in
   the Presenton UI exactly like slides.
+- Style previews ("show, don't tell"): a cheap job kind that renders 3 title
+  slides in different themes so a human or agent can pick before committing
+  to a full generation. Not built yet.
+- Deck → PDF: screenshot each slide via Chromium and combine, for users who
+  want a static copy of an HTML deck.

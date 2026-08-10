@@ -8,8 +8,13 @@ Three free-tier accounts are needed: [Convex](https://convex.dev),
 
 1. Cloudflare dashboard → **R2** → create bucket `presenton-artifacts`
    (keep it private; free tier: 10 GB storage, zero egress fees).
-2. **R2 → Manage API tokens → Create API token** with *Object Read & Write*
-   on that bucket. Note the **Access Key ID**, **Secret Access Key**, and
+2. *Optional, for `publish: true`* — create a second bucket
+   `presenton-public`, open its **Settings → Public access**, and either
+   enable the `r2.dev` development URL or connect a custom domain. Note the
+   resulting base URL (e.g. `https://pub-xxxx.r2.dev`). Skip this and
+   published jobs simply return no public URL.
+3. **R2 → Manage API tokens → Create API token** with *Object Read & Write*
+   on those buckets. Note the **Access Key ID**, **Secret Access Key**, and
    your account's S3 endpoint: `https://<account-id>.r2.cloudflarestorage.com`.
 
 ## 2. Convex + dashboard
@@ -73,6 +78,13 @@ modal secret create presenton-worker \
   MODAL_CALLBACK_SECRET=<same-value-as-convex>
 ```
 
+Add these two as well if you created the public bucket in step 1.2:
+
+```bash
+  R2_PUBLIC_BUCKET=presenton-public \
+  R2_PUBLIC_BASE_URL=https://pub-xxxx.r2.dev
+```
+
 Deploy (from the repo root, so the image can bundle `platform/doc_engine`
 and `templates/`):
 
@@ -109,6 +121,11 @@ curl "https://<deployment>.convex.site/agent/v1/jobs/status?id=<job_id>" \
 
 Or run `python platform/examples/agent_client.py`.
 
+To let a coding agent drive the API, point it at
+[`platform/SKILL.md`](SKILL.md) — it documents auth, the three job kinds, the
+themes, and the polling loop. For Claude Code, copying that file to
+`~/.claude/skills/presenton-platform/SKILL.md` installs it as a skill.
+
 Note the two Convex URLs: `*.convex.cloud` is the client API
 (`NEXT_PUBLIC_CONVEX_URL`), while HTTP endpoints (`/agent/v1/*`) live on
 `*.convex.site`.
@@ -124,10 +141,19 @@ update `SITE_URL` in the production deployment's env.
 The doc-engine runs standalone:
 
 ```bash
-pip install python-docx
+pip install python-docx pyyaml
 cd platform
+
+# A4 document in a slide template's aesthetic
 python -m doc_engine --template momentum \
   --content-file examples/brief.md --formats pdf,docx,html \
-  --templates-dir ../templates --out /tmp/doc-out \
-  --chromium /usr/bin/chromium
+  --templates-dir ../templates --specs-dir design-specs \
+  --out /tmp/doc-out --chromium /usr/bin/chromium
+
+# Interactive HTML deck in a design-spec theme
+python -m doc_engine --artifact deck --template midnight-gold \
+  --content-file examples/brief.md \
+  --templates-dir ../templates --specs-dir design-specs \
+  --out /tmp/deck-out
+open /tmp/deck-out/deck.html   # arrows/space to navigate
 ```

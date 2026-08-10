@@ -36,13 +36,18 @@ async function authenticateAgent(
 //
 //   POST /agent/v1/jobs
 //   Authorization: Bearer sk_pres_...
-//   { "kind": "presentation" | "document", "request": { ... } }
+//   { "kind": "presentation" | "document" | "deck", "request": { ... } }
 //
 // For kind=presentation, `request` mirrors the Presenton engine's
 // GeneratePresentationRequest: { content, instructions?, n_slides?, template?,
 // language?, tone?, export_as: "pptx"|"pdf" }.
 // For kind=document, `request` is the doc-engine request: { content,
 // instructions?, template?, formats?: ["pdf","docx","html"] }.
+// For kind=deck, `request` is { content, instructions?, template? } and the
+// result is one self-contained interactive HTML file.
+//
+// Any kind accepts `publish: true` to also place the artifact at a stable
+// public URL (requires a public R2 bucket on the worker).
 // ---------------------------------------------------------------------------
 http.route({
   path: "/agent/v1/jobs",
@@ -57,8 +62,15 @@ http.route({
     } catch {
       return json({ error: "Body must be JSON" }, 400);
     }
-    if (body.kind !== "presentation" && body.kind !== "document") {
-      return json({ error: 'kind must be "presentation" or "document"' }, 400);
+    if (
+      body.kind !== "presentation" &&
+      body.kind !== "document" &&
+      body.kind !== "deck"
+    ) {
+      return json(
+        { error: 'kind must be "presentation", "document", or "deck"' },
+        400
+      );
     }
     if (typeof body.request !== "object" || body.request === null) {
       return json({ error: "request must be an object" }, 400);
@@ -137,7 +149,12 @@ http.route({
       job_id: string;
       status: "succeeded" | "failed";
       error?: string;
-      artifacts?: Array<{ format: string; r2_key: string; bytes?: number }>;
+      artifacts?: Array<{
+        format: string;
+        r2_key: string;
+        bytes?: number;
+        public_url?: string;
+      }>;
     };
 
     await ctx.runMutation(internal.jobs.setStatus, {
@@ -148,6 +165,7 @@ http.route({
         format: a.format,
         r2Key: a.r2_key,
         bytes: a.bytes,
+        publicUrl: a.public_url,
       })),
     });
     return json({ ok: true });

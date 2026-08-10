@@ -16,6 +16,7 @@ import json
 import os
 import urllib.request
 
+from .deck import DECK_JSON_SPEC
 from .structure import DOCUMENT_JSON_SPEC
 
 
@@ -28,6 +29,28 @@ def llm_configured() -> bool:
 
 
 def generate_structure(content: str, instructions: str | None) -> dict:
+    system = (
+        "You write professional business documents (reports, briefs, one-pagers). "
+        + DOCUMENT_JSON_SPEC
+    )
+    user = f"Write a document based on:\n\n{content}"
+    if instructions:
+        user += f"\n\nAdditional instructions: {instructions}"
+    return _chat_json(system, user)
+
+
+def generate_deck_structure(content: str, instructions: str | None) -> dict:
+    system = (
+        "You write clear, punchy presentation decks. One idea per slide. "
+        + DECK_JSON_SPEC
+    )
+    user = f"Write a presentation based on:\n\n{content}"
+    if instructions:
+        user += f"\n\nAdditional instructions: {instructions}"
+    return _chat_json(system, user)
+
+
+def _chat_json(system: str, user: str) -> dict:
     base_url = (
         os.environ.get("DOC_ENGINE_LLM_BASE_URL")
         or os.environ.get("CUSTOM_LLM_URL")
@@ -43,14 +66,6 @@ def generate_structure(content: str, instructions: str | None) -> dict:
         or os.environ.get("CUSTOM_MODEL")
         or "gpt-4.1"
     )
-
-    system = (
-        "You write professional business documents (reports, briefs, one-pagers). "
-        + DOCUMENT_JSON_SPEC
-    )
-    user = f"Write a document based on:\n\n{content}"
-    if instructions:
-        user += f"\n\nAdditional instructions: {instructions}"
 
     body = json.dumps(
         {

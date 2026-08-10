@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from .theme import Theme
+from .theme import Theme, google_fonts_links
 
 
 def _font_faces(theme: Theme) -> str:
@@ -28,8 +28,9 @@ def _css(theme: Theme) -> str:
 :root {{
   --accent: {theme.accent};
   --accent-dark: {theme.accent_dark};
-  --ink: {theme.ink};
+  --ink: {theme.text_color};
   --muted: {theme.muted};
+  --bg: {theme.bg};
 }}
 
 @page {{
@@ -39,13 +40,22 @@ def _css(theme: Theme) -> str:
 
 * {{ box-sizing: border-box; }}
 
+html {{
+  background: var(--bg);
+  /* Keep themed page/table backgrounds when printing to PDF. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}}
+
 body {{
   margin: 0;
+  background: var(--bg);
   font-family: "{theme.body_font}", system-ui, sans-serif;
   color: var(--ink);
   font-size: 10.5pt;
   line-height: 1.55;
 }}
+
 
 .cover {{
   page-break-after: always;
@@ -71,7 +81,8 @@ body {{
   line-height: 1.02;
   letter-spacing: -0.02em;
   margin: 0 0 8mm;
-  text-transform: uppercase;
+  font-style: {theme.heading_style};
+  text-transform: {theme.heading_transform};
 }}
 
 .cover .subtitle {{
@@ -95,7 +106,8 @@ h2 {{
   font-family: "{theme.heading_font}", "{theme.body_font}", sans-serif;
   font-size: 17pt;
   letter-spacing: -0.01em;
-  text-transform: uppercase;
+  font-style: {theme.heading_style};
+  text-transform: {theme.heading_transform};
   margin: 0 0 4mm;
   padding-bottom: 2mm;
   border-bottom: 2.5px solid var(--accent);
@@ -114,7 +126,7 @@ blockquote {{
   margin: 4mm 0;
   padding: 3mm 5mm;
   border-left: 3.5px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, white);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
   font-size: 12pt;
   font-style: italic;
 }}
@@ -128,7 +140,7 @@ blockquote {{
 .stat {{
   flex: 1;
   border-top: 3.5px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 5%, white);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
   padding: 4mm;
 }}
 
@@ -156,7 +168,7 @@ table {{
 
 th {{
   background: var(--accent);
-  color: #fff;
+  color: var(--bg);
   text-align: left;
   padding: 2.5mm 3mm;
   font-family: "{theme.heading_font}", sans-serif;
@@ -166,11 +178,11 @@ th {{
 
 td {{
   padding: 2.2mm 3mm;
-  border-bottom: 1px solid #e3e6ee;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 15%, var(--bg));
 }}
 
 tr:nth-child(even) td {{
-  background: color-mix(in srgb, var(--accent) 3%, white);
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg));
 }}
 """
 
@@ -210,6 +222,7 @@ def _render_block(block: dict) -> str:
 
 
 def render_html(doc: dict, theme: Theme) -> str:
+    theme = theme.for_print()
     sections = "".join(
         f"""<section>
 <h2>{html.escape(section.get('heading', ''))}</h2>
@@ -225,6 +238,7 @@ def render_html(doc: dict, theme: Theme) -> str:
 <head>
 <meta charset="utf-8">
 <title>{html.escape(doc.get('title', 'Document'))}</title>
+{google_fonts_links(theme)}
 <style>{_css(theme)}</style>
 </head>
 <body>

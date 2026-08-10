@@ -10,9 +10,19 @@ export const jobStatus = v.union(
 );
 
 export const jobKind = v.union(
-  v.literal("presentation"),
-  v.literal("document")
+  v.literal("presentation"), // PPTX/PDF via the Presenton engine
+  v.literal("document"), // A4 PDF/DOCX/HTML via the doc-engine
+  v.literal("deck") // self-contained interactive HTML presentation
 );
+
+export const artifact = v.object({
+  format: v.string(), // pptx | pdf | docx | html
+  r2Key: v.string(),
+  bytes: v.optional(v.number()),
+  // Stable public URL, present only when the job requested `publish: true`
+  // and the worker has a public bucket configured.
+  publicUrl: v.optional(v.string()),
+});
 
 export default defineSchema({
   ...authTables,
@@ -41,15 +51,7 @@ export default defineSchema({
     request: v.any(),
     error: v.optional(v.string()),
     modalCallId: v.optional(v.string()),
-    artifacts: v.optional(
-      v.array(
-        v.object({
-          format: v.string(), // pptx | pdf | docx | html
-          r2Key: v.string(),
-          bytes: v.optional(v.number()),
-        })
-      )
-    ),
+    artifacts: v.optional(v.array(artifact)),
     completedAt: v.optional(v.number()),
   }).index("by_user", ["userId"]),
 });

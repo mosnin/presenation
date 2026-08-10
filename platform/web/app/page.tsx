@@ -6,7 +6,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useState } from "react";
 import Shell from "@/components/Shell";
 
-const TEMPLATES = [
+type Kind = "presentation" | "document" | "deck";
+
+// Slide templates (PPTX-capable) plus design specs (HTML/PDF/DOCX only).
+const SLIDE_TEMPLATES = [
   "general",
   "momentum",
   "modern",
@@ -15,10 +18,11 @@ const TEMPLATES = [
   "standard",
   "swift",
 ];
+const DESIGN_SPECS = ["midnight-gold", "paper-zine", "swiss-crimson"];
 
 function NewJobForm() {
   const submit = useMutation(api.jobs.submit);
-  const [kind, setKind] = useState<"presentation" | "document">("presentation");
+  const [kind, setKind] = useState<Kind>("presentation");
   const [busy, setBusy] = useState(false);
 
   return (
@@ -29,19 +33,21 @@ function NewJobForm() {
           e.preventDefault();
           const form = e.currentTarget;
           const data = new FormData(form);
+          const common = {
+            content: data.get("content"),
+            template: data.get("template"),
+            publish: data.get("publish") === "on",
+          };
           const request =
             kind === "presentation"
               ? {
-                  content: data.get("content"),
-                  template: data.get("template"),
+                  ...common,
                   n_slides: Number(data.get("n_slides")) || undefined,
                   export_as: data.get("format"),
                 }
-              : {
-                  content: data.get("content"),
-                  template: data.get("template"),
-                  formats: [data.get("format")],
-                };
+              : kind === "deck"
+                ? common
+                : { ...common, formats: [data.get("format")] };
           setBusy(true);
           try {
             await submit({ kind, request });
@@ -52,14 +58,10 @@ function NewJobForm() {
         }}
       >
         <label>Type</label>
-        <select
-          value={kind}
-          onChange={(e) =>
-            setKind(e.target.value as "presentation" | "document")
-          }
-        >
-          <option value="presentation">Presentation</option>
-          <option value="document">Document</option>
+        <select value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
+          <option value="presentation">Presentation (PPTX / PDF)</option>
+          <option value="deck">Interactive HTML deck</option>
+          <option value="document">Document (PDF / DOCX)</option>
         </select>
         <label>Content / prompt</label>
         <textarea
@@ -69,23 +71,41 @@ function NewJobForm() {
         />
         <label>Template</label>
         <select name="template" defaultValue="general">
-          {TEMPLATES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
+          <optgroup label="Slide templates">
+            {SLIDE_TEMPLATES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </optgroup>
+          {kind !== "presentation" && (
+            <optgroup label="Design specs">
+              {DESIGN_SPECS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
-        {kind === "presentation" ? (
+        {kind === "presentation" && (
           <>
             <label>Slides</label>
-            <input name="n_slides" type="number" min={1} max={30} placeholder="auto" />
+            <input
+              name="n_slides"
+              type="number"
+              min={1}
+              max={30}
+              placeholder="auto"
+            />
             <label>Format</label>
             <select name="format" defaultValue="pptx">
               <option value="pptx">PPTX</option>
               <option value="pdf">PDF</option>
             </select>
           </>
-        ) : (
+        )}
+        {kind === "document" && (
           <>
             <label>Format</label>
             <select name="format" defaultValue="pdf">
@@ -95,6 +115,16 @@ function NewJobForm() {
             </select>
           </>
         )}
+        <label
+          style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
+        >
+          <input
+            name="publish"
+            type="checkbox"
+            style={{ width: "auto", margin: 0 }}
+          />
+          Publish to a public URL
+        </label>
         <button disabled={busy} type="submit">
           {busy ? "Submitting…" : "Generate"}
         </button>
@@ -105,15 +135,30 @@ function NewJobForm() {
 
 function DownloadLinks({ jobId }: { jobId: Id<"jobs"> }) {
   const getUrls = useAction(api.jobs.downloadUrls);
-  const [urls, setUrls] = useState<Array<{ format: string; url: string }>>();
+  const [urls, setUrls] =
+    useState<Array<{ format: string; url: string; public_url?: string }>>();
 
   if (urls) {
     return (
       <>
         {urls.map((u) => (
-          <a key={u.format} href={u.url} style={{ marginRight: 8 }}>
-            {u.format}
-          </a>
+          <span key={u.format} style={{ marginRight: 10 }}>
+            <a href={u.url}>{u.format}</a>
+            {u.public_url && (
+              <>
+                {" "}
+                <a
+                  href={u.public_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hint"
+                  title={u.public_url}
+                >
+                  (public link)
+                </a>
+              </>
+            )}
+          </span>
         ))}
       </>
     );
