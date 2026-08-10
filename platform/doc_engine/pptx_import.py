@@ -120,10 +120,20 @@ def pptx_to_deck(
     keep_images: bool = True,
     images_dir: str | Path | None = None,
 ) -> dict:
-    """Parse a .pptx into the deck structure used by deck_render."""
+    """Parse a .pptx into the deck structure used by deck_render.
+
+    Raises ValueError for anything that isn't a readable presentation, so a
+    bad upload reaches the caller as a clear job error rather than a
+    python-pptx internal.
+    """
     from pptx import Presentation
 
-    prs = Presentation(str(path))
+    try:
+        prs = Presentation(str(path))
+    except Exception as exc:  # noqa: BLE001 - any parse failure is user-facing
+        raise ValueError(
+            f"{Path(path).name} could not be read as a .pptx file: {exc}"
+        ) from exc
     slides: list[dict] = []
     deck_title: str | None = None
     deck_subtitle: str | None = None

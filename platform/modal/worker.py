@@ -311,8 +311,13 @@ def _run_style_preview_job(job_id: str, request: dict) -> list[dict]:
     from doc_engine.pipeline import generate_style_previews
 
     publish = bool(request.get("publish"))
+    # Callers may pass a whole prompt as `content`; a title slide needs one
+    # short line, so take the first and cap it.
+    raw_title = request.get("title") or request.get("content") or "Untitled"
+    title = str(raw_title).strip().splitlines()[0][:90] or "Untitled"
+
     previews = generate_style_previews(
-        title=request.get("title") or request.get("content", "Untitled"),
+        title=title,
         subtitle=request.get("subtitle"),
         meta=request.get("meta"),
         themes=request.get("themes"),

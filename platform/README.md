@@ -19,6 +19,7 @@ API — and extends the product beyond PPTX to **interactive HTML decks** and
 - **[SKILL.md](SKILL.md)** — drop-in instructions so any coding agent can use the API
 - **[doc_engine/DESIGN.md](doc_engine/DESIGN.md)** — the documents/decks roadmap
 - **[examples/](examples)** — agent client + sample content
+- **[tests/](tests)** — doc-engine integration tests (`python tests/test_doc_engine.py`)
 
 Four artifact kinds:
 

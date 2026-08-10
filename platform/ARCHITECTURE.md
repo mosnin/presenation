@@ -151,6 +151,20 @@ from the MIT-licensed
 which demonstrated that a declarative spec plus a scaled fixed canvas is
 enough to produce distinctive decks without a layout engine.
 
+### `platform/tests` — what is actually verified
+
+`tests/test_doc_engine.py` covers the layer that runs without live services:
+theme resolution from both sources (including the print-safety rules), the
+markdown and deck models, HTML/PDF/DOCX rendering, style previews, PPTX
+import with images, and the error paths (unknown theme, empty deck, corrupt
+file, missing image, HTML escaping). Rendering tests skip when no Chromium is
+present, so the suite still runs on a machine without one. CI runs it on
+every push touching `platform/` or `templates/`.
+
+Not covered by tests: the Convex functions, the Modal worker, and R2 upload —
+those need live services. The worker's job routing is thin, so the practical
+check is running one real job per kind through the dashboard after deploying.
+
 ## Job lifecycle
 
 1. Agent POSTs to `/agent/v1/jobs` with an API key → job `queued`.

@@ -122,7 +122,7 @@ curl "https://<deployment>.convex.site/agent/v1/jobs/status?id=<job_id>" \
 Or run `python platform/examples/agent_client.py`.
 
 To let a coding agent drive the API, point it at
-[`platform/SKILL.md`](SKILL.md) — it documents auth, the three job kinds, the
+[`platform/SKILL.md`](SKILL.md) — it documents auth, the four job kinds, the
 themes, and the polling loop. For Claude Code, copying that file to
 `~/.claude/skills/presenton-platform/SKILL.md` installs it as a skill.
 
@@ -135,6 +135,19 @@ Note the two Convex URLs: `*.convex.cloud` is the client API
 Any Next.js host works; Vercel free tier is the shortest path:
 set `NEXT_PUBLIC_CONVEX_URL`, run `npx convex deploy` for production, and
 update `SITE_URL` in the production deployment's env.
+
+## Tests
+
+```bash
+cd platform
+pip install pyyaml python-docx python-pptx pillow
+python tests/test_doc_engine.py
+```
+
+Covers theme resolution, all four artifact paths, PPTX import, and the error
+paths. Rendering tests skip if no Chromium is found (set `CHROMIUM_PATH` to
+point at one). CI runs the same suite on every push touching `platform/`.
+See [`tests/README.md`](tests/README.md).
 
 ## Local development without Modal
 
