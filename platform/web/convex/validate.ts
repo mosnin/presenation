@@ -154,11 +154,43 @@ export function validateJobRequest(
     case "deck": {
       const urlError = checkSourceUrl(request.source_pptx_url);
       if (urlError) return urlError;
+
+      // Re-rendering an existing deck: `deck` is the deck.json from an
+      // earlier job, `patch` an optional list of edits to apply first.
+      if (request.deck !== undefined) {
+        const deck = request.deck as Record<string, unknown>;
+        if (typeof deck !== "object" || deck === null || Array.isArray(deck)) {
+          return "deck must be a deck object (the deck.json from a prior job)";
+        }
+        if (!Array.isArray(deck.slides) || deck.slides.length === 0) {
+          return "deck.slides must be a non-empty array";
+        }
+      }
+      if (request.patch !== undefined) {
+        if (request.deck === undefined) {
+          return "patch requires deck (the deck.json the edits apply to)";
+        }
+        if (!Array.isArray(request.patch) || request.patch.length === 0) {
+          return "patch must be a non-empty array of operations";
+        }
+        for (const operation of request.patch) {
+          if (
+            typeof operation !== "object" ||
+            operation === null ||
+            Array.isArray(operation) ||
+            !nonEmptyString((operation as Record<string, unknown>).op)
+          ) {
+            return "each patch operation must be an object with an op field";
+          }
+        }
+      }
+
       if (
         request.source_pptx_url === undefined &&
+        request.deck === undefined &&
         !nonEmptyString(request.content)
       ) {
-        return "content is required unless source_pptx_url is provided";
+        return "content is required unless source_pptx_url or deck is provided";
       }
       return checkFormats(request.formats, DECK_FORMATS);
     }

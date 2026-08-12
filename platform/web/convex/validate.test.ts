@@ -138,6 +138,25 @@ test("deck: source URL cannot point at internal hosts (SSRF)", () => {
   ok("deck", { source_pptx_url: "https://files.example.com/deck.pptx" });
 });
 
+test("deck: an existing deck can be re-rendered", () => {
+  const deck = { title: "T", slides: [{ layout: "title", title: "T" }] };
+  ok("deck", { deck });
+  ok("deck", { deck, patch: [{ op: "set", slide: 0, field: "title", value: "X" }] });
+});
+
+test("deck: patch requires the deck it applies to", () => {
+  bad("deck", { patch: [{ op: "set" }] }, "patch requires deck");
+});
+
+test("deck: malformed decks and patches are rejected", () => {
+  bad("deck", { deck: { slides: [] } }, "non-empty array");
+  bad("deck", { deck: [] }, "deck object");
+  const deck = { title: "T", slides: [{ layout: "title" }] };
+  bad("deck", { deck, patch: [] }, "non-empty array");
+  bad("deck", { deck, patch: ["set"] }, "op field");
+  bad("deck", { deck, patch: [{ slide: 0 }] }, "op field");
+});
+
 // --- document -------------------------------------------------------------
 
 test("document: content required, formats constrained", () => {

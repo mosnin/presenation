@@ -17,6 +17,7 @@ from . import (
     structure,
 )
 from . import brand
+from . import patch as patch_mod
 from . import fit as fit_engine
 from .theme import Theme, resolve_theme
 
@@ -88,18 +89,29 @@ def generate_deck(
     chromium: str = "/usr/bin/chromium",
     fit: bool = True,
     brand_image: str | Path | None = None,
+    source_deck: dict | None = None,
+    patch: list[dict] | None = None,
 ) -> dict[str, str]:
     """Generate a presentation deck.
 
     Returns {format: output_path} for the requested formats (`html`, `pdf`).
-    Content comes from `source_pptx` when converting an existing deck, from
-    an LLM when one is configured, or deterministically from markdown.
+
+    The deck model comes from, in order: `source_deck` (an existing deck.json,
+    optionally edited by `patch`), `source_pptx` (converting a PowerPoint), an
+    LLM when one is configured, or markdown parsed deterministically.
     """
     formats = formats or ["html"]
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if source_pptx:
+    if source_deck is not None:
+        # Re-render an existing deck, optionally with surgical edits applied.
+        # Cheaper and far more predictable than regenerating to change a
+        # number, and every untouched slide stays byte-identical.
+        deck = (
+            patch_mod.apply_patch(source_deck, patch)[0] if patch else source_deck
+        )
+    elif source_pptx:
         # Extracted images live under the output dir; they are inlined into
         # the HTML, so they are intermediates rather than deliverables.
         deck = pptx_import.pptx_to_deck(

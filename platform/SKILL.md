@@ -110,6 +110,36 @@ to anyone with the URL).
   to re-typeset the content in a coherent design system.
 - `document`: `formats` (array of `"pdf"`, `"docx"`, `"html"`; default
   `["pdf"]`).
+
+### Editing a deck instead of regenerating it
+
+Every `deck` job also returns its model as a `json` artifact (`deck.json`).
+To change something, fetch that, then submit a new `deck` job with `deck`
+set to the model and `patch` set to a list of edits — the untouched slides
+come back byte-identical, and it costs no model call.
+
+```json
+{"kind": "deck", "request": {
+  "deck": { ...deck.json... },
+  "patch": [
+    {"op": "set_item", "slide": 3, "index": 1, "value": "Margin 43%"},
+    {"op": "delete", "slide": 6},
+    {"op": "insert", "index": 7, "value": {"layout": "section", "heading": "Outlook"}}
+  ],
+  "template": "momentum"
+}}
+```
+
+Operations: `set` (slide, field, value), `set_item` (slide, index, value),
+`replace` (slide, value), `insert` (index, value), `delete` (slide), `move`
+(from, to), `set_meta` (field, value). Slide indexes are 0-based and always
+refer to the deck **as you read it** — a batch of edits doesn't shift its own
+indexes. Any invalid operation rejects the whole patch, so a partial edit
+never lands.
+
+Prefer this over regenerating whenever the user asks for a specific change
+("fix the number on slide 4", "drop the pricing slide", "move the summary to
+the front"). Regenerate only when they want different content.
 - `style_preview`: `title` (required), `subtitle`, `meta`, and `themes` (an
   array; omit for a spread across light/dark and serif/sans). Ignores
   `template` — it renders every candidate.

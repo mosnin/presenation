@@ -23,6 +23,16 @@ def main() -> None:
     )
     parser.add_argument("--from-pptx", default=None, help="convert an existing .pptx")
     parser.add_argument(
+        "--deck-file",
+        default=None,
+        help="re-render an existing deck.json instead of generating",
+    )
+    parser.add_argument(
+        "--patch-file",
+        default=None,
+        help="JSON list of edit operations to apply to --deck-file",
+    )
+    parser.add_argument(
         "--brand-image",
         default=None,
         help="derive the theme from a logo/screenshot instead of --template",
@@ -49,10 +59,13 @@ def main() -> None:
         content = Path(args.content_file).read_text()
     elif args.content:
         content = args.content
-    elif args.from_pptx:
+    elif args.from_pptx or args.deck_file:
         content = ""  # content comes from the source deck
     else:
-        print("Provide --content, --content-file, or --from-pptx", file=sys.stderr)
+        print(
+            "Provide --content, --content-file, --from-pptx, or --deck-file",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     if args.artifact == "previews":
@@ -80,6 +93,16 @@ def main() -> None:
             chromium=args.chromium,
             fit=not args.no_fit,
             brand_image=args.brand_image,
+            source_deck=(
+                json.loads(Path(args.deck_file).read_text())
+                if args.deck_file
+                else None
+            ),
+            patch=(
+                json.loads(Path(args.patch_file).read_text())
+                if args.patch_file
+                else None
+            ),
         )
     else:
         outputs = generate_document(

@@ -297,6 +297,10 @@ def _run_deck_job(job_id: str, request: dict) -> list[dict]:
         template=request.get("template", "general"),
         formats=request.get("formats", ["html"]),
         source_pptx=source_pptx,
+        # An existing deck model, optionally with edits applied, so callers
+        # can fix one slide instead of regenerating everything.
+        source_deck=request.get("deck"),
+        patch=request.get("patch"),
         out_dir="/tmp/deck-out",
         chromium="/usr/bin/chromium",
         # Measure the rendered deck and repair overflowing slides before
@@ -305,10 +309,16 @@ def _run_deck_job(job_id: str, request: dict) -> list[dict]:
         brand_image=brand_image,
         **_doc_engine_kwargs(),
     )
-    return [
+    artifacts = [
         _store(job_id, Path(path), "deck", fmt, publish)
         for fmt, path in outputs.items()
     ]
+    # Ship the deck model alongside the rendering: it is what a caller edits
+    # and sends back as `deck` + `patch`.
+    deck_json = Path("/tmp/deck-out/deck.json")
+    if deck_json.exists():
+        artifacts.append(_store(job_id, deck_json, "deck", "json", publish))
+    return artifacts
 
 
 def _run_style_preview_job(job_id: str, request: dict) -> list[dict]:

@@ -59,6 +59,10 @@ layouts. A "momentum" report visibly belongs to the same family as a
   text by role and contrast rather than by frequency. Text contrast is
   verified (>= 4.0) before a theme is returned. Serializes to a normal
   design spec so it can be edited by hand afterwards.
+- `patch.py` — **surgical deck edits**: set/set_item/replace/insert/delete/
+  move/set_meta over the deck model, so an agent fixes one slide instead of
+  regenerating. Indexes resolve against slide identity so batched ops don't
+  shift each other; an invalid op rejects the whole patch.
 - `preview.py` — renders the same title slide across candidate themes as
   PNGs ("show, don't tell"), so the look is chosen by looking. One Chromium
   screenshot per candidate; no LLM call, no engine boot.

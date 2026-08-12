@@ -196,20 +196,30 @@ def apply_patch(deck: dict, operations: list[dict]) -> tuple[dict, list[str]]:
                 "delete, move, or set_meta"
             )
 
-    # Moves first (indexes still refer to the original list), then deletions,
-    # then insertions at the caller's positions.
+    # Structural ops are resolved against slide *identity*, not position, so
+    # a batch behaves the way the caller wrote it: "insert at 3, delete 2"
+    # puts the new slide before the original slide 3 regardless of the
+    # deletion, instead of the two ops shifting each other around.
+    tagged: list[tuple[int, dict]] = list(enumerate(slides))
+
     for source, target in moves:
-        slide = slides.pop(source)
-        slides.insert(target, slide)
+        entry = next(e for e in tagged if e[0] == source)
+        tagged.remove(entry)
+        tagged.insert(min(target, len(tagged)), entry)
 
     if deletions:
-        if len(deletions) >= len(slides):
+        if len(deletions) >= original_count:
             raise PatchError("a patch cannot delete every slide")
-        for index in sorted(deletions, reverse=True):
-            if index < len(slides):
-                slides.pop(index)
+        tagged = [entry for entry in tagged if entry[0] not in deletions]
 
-    for offset, (index, slide) in enumerate(inserts):
-        slides.insert(min(index + offset, len(slides)), slide)
+    for anchor, slide in inserts:
+        # Insert before the slide that had this index; if it was deleted or
+        # moved away, fall back to the next surviving slide, then the end.
+        position = next(
+            (i for i, (original, _) in enumerate(tagged) if original >= anchor),
+            len(tagged),
+        )
+        tagged.insert(position, (-1, slide))
 
+    working["slides"] = [slide for _, slide in tagged]
     return working, summaries

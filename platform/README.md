@@ -40,6 +40,10 @@ GET  /agent/v1/jobs/status?id=…  → { status, artifacts:[{format,url,public_u
 Plus `POST /agent/v1/jobs/cancel` and `…/retry`. Add `"publish": true` to any
 request to also place the artifact at a stable public URL.
 
+Decks are **patchable**: every deck job returns its model as `deck.json`, and
+a later job can send it back with a list of edits (`patch`) to change one
+slide without regenerating the rest.
+
 Themes can be **synthesized from a brand image** — pass `brand_image_url`
 (deck/document) and the palette is derived from a logo or screenshot, with
 text contrast checked, instead of naming a template.

@@ -92,6 +92,27 @@ if __name__ == "__main__":
     )
     print(json.dumps(result, indent=2))
 
+    # Edit a deck instead of regenerating it: fetch the model the job
+    # returned, change one bullet, re-render. Every other slide is untouched
+    # and no model call is involved.
+    deck_model = next(
+        (a for a in result.get("artifacts", []) if a["format"] == "json"), None
+    )
+    if deck_model:
+        with urllib.request.urlopen(deck_model["url"], timeout=60) as res:
+            model = json.loads(res.read())
+        revised = create_artifact(
+            "deck",
+            {
+                "deck": model,
+                "patch": [
+                    {"op": "set", "slide": 0, "field": "subtitle", "value": "Revised"}
+                ],
+                "template": "midnight-gold",
+            },
+        )
+        print(json.dumps(revised, indent=2))
+
     # Convert a PowerPoint someone already has into a themed web deck:
     result = create_artifact(
         "deck",

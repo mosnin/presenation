@@ -186,6 +186,16 @@ guessing wrong is worse than a clean default. The result serializes to an
 ordinary design spec (`theme_to_spec`), so it can be reviewed, hand-edited,
 and committed like any other theme.
 
+**Patchable decks** (`patch.py`) fix the shape of the agent loop. Changing
+one number used to mean regenerating the whole deck: a new model call, a new
+layout, and every other slide quietly different. Since a deck is already a
+plain JSON document, every deck job now ships its model as a `json` artifact,
+and a job can supply `deck` plus a list of `patch` operations instead of
+content. Operations resolve against slide *identity*, not position, so a
+batch like "insert at 3, delete 2" does what it says instead of the two ops
+shifting each other. An invalid operation rejects the entire patch — a
+half-applied edit is worse than a refused one.
+
 **Style previews** (`preview.py`) render the same title slide across
 candidate themes as PNGs, so the choice of look is made by looking rather
 than by guessing from a theme name.

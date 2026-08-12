@@ -587,6 +587,170 @@ class FitMeasureTests(unittest.TestCase):
         self.assertEqual(fixed["slides"], deck["slides"])
 
 
+class PatchTests(unittest.TestCase):
+    """Surgical edits to a deck model."""
+
+    def setUp(self) -> None:
+        self.deck = {
+            "title": "Q3",
+            "slides": [
+                {"layout": "title", "title": "A"},
+                {"layout": "bullets", "heading": "B", "items": ["x", "y"]},
+                {"layout": "quote", "text": "C"},
+                {"layout": "closing", "heading": "D"},
+            ],
+        }
+
+    def labels(self, deck: dict) -> list:
+        return [
+            slide.get("heading") or slide.get("title") or slide.get("text")
+            for slide in deck["slides"]
+        ]
+
+    def test_set_field_and_item(self):
+        from doc_engine.patch import apply_patch
+
+        new, log = apply_patch(
+            self.deck,
+            [
+                {"op": "set", "slide": 0, "field": "subtitle", "value": "FY26"},
+                {"op": "set_item", "slide": 1, "index": 1, "value": "z"},
+            ],
+        )
+        self.assertEqual(new["slides"][0]["subtitle"], "FY26")
+        self.assertEqual(new["slides"][1]["items"], ["x", "z"])
+        self.assertEqual(len(log), 2)
+
+    def test_input_deck_is_never_mutated(self):
+        from doc_engine.patch import apply_patch
+
+        apply_patch(self.deck, [{"op": "set_item", "slide": 1, "index": 0, "value": "!"}])
+        self.assertEqual(self.deck["slides"][1]["items"], ["x", "y"])
+
+    def test_insert_and_delete_do_not_shift_each_other(self):
+        """Indexes refer to the deck as the caller read it, so a batch of
+        edits does what it says."""
+        from doc_engine.patch import apply_patch
+
+        new, _ = apply_patch(
+            self.deck,
+            [
+                {
+                    "op": "insert",
+                    "index": 3,
+                    "value": {"layout": "section", "heading": "NEW"},
+                },
+                {"op": "delete", "slide": 2},
+            ],
+        )
+        self.assertEqual(self.labels(new), ["A", "B", "NEW", "D"])
+
+    def test_multiple_deletes_use_original_indexes(self):
+        from doc_engine.patch import apply_patch
+
+        new, _ = apply_patch(
+            self.deck, [{"op": "delete", "slide": 0}, {"op": "delete", "slide": 2}]
+        )
+        self.assertEqual(self.labels(new), ["B", "D"])
+
+    def test_move_reorders(self):
+        from doc_engine.patch import apply_patch
+
+        new, _ = apply_patch(self.deck, [{"op": "move", "from": 3, "to": 0}])
+        self.assertEqual(self.labels(new), ["D", "A", "B", "C"])
+
+    def test_replace_and_set_meta(self):
+        from doc_engine.patch import apply_patch
+
+        new, _ = apply_patch(
+            self.deck,
+            [
+                {
+                    "op": "replace",
+                    "slide": 2,
+                    "value": {"layout": "prose", "heading": "New", "paragraphs": ["p"]},
+                },
+                {"op": "set_meta", "field": "title", "value": "Q3 final"},
+            ],
+        )
+        self.assertEqual(new["slides"][2]["layout"], "prose")
+        self.assertEqual(new["title"], "Q3 final")
+
+    def test_errors_name_the_problem(self):
+        from doc_engine.patch import PatchError, apply_patch
+
+        cases = [
+            ([{"op": "set", "slide": 99, "field": "heading", "value": "x"}], "out of range"),
+            ([{"op": "set", "slide": 0, "field": "headding", "value": "x"}], "not editable"),
+            ([{"op": "set", "slide": 1, "field": "items", "value": "no"}], "expects a list"),
+            ([{"op": "nope"}], "unknown op"),
+            ([{"op": "replace", "slide": 0, "value": {"layout": "bogus"}}], "layout"),
+            ([{"op": "set_item", "slide": 2, "index": 0, "value": "x"}], "no list of items"),
+            ([], "non-empty list"),
+        ]
+        for operations, expected in cases:
+            with self.assertRaises(PatchError) as ctx:
+                apply_patch(self.deck, operations)
+            self.assertIn(expected, str(ctx.exception).lower())
+
+    def test_a_failing_operation_applies_nothing(self):
+        """A half-applied patch is worse than a rejected one."""
+        from doc_engine.patch import PatchError, apply_patch
+
+        with self.assertRaises(PatchError):
+            apply_patch(
+                self.deck,
+                [
+                    {"op": "set", "slide": 0, "field": "title", "value": "changed"},
+                    {"op": "set", "slide": 99, "field": "title", "value": "boom"},
+                ],
+            )
+        self.assertEqual(self.deck["slides"][0]["title"], "A")
+
+    def test_cannot_delete_every_slide(self):
+        from doc_engine.patch import PatchError, apply_patch
+
+        with self.assertRaises(PatchError):
+            apply_patch(
+                self.deck, [{"op": "delete", "slide": i} for i in range(4)]
+            )
+
+
+@needs_chromium
+class PatchRoundTripTests(TempDirTest):
+    def test_deck_round_trips_through_patch_and_rerender(self):
+        """The workflow that matters: generate, read deck.json, edit one
+        slide, re-render — with every other slide untouched."""
+        from doc_engine.pipeline import generate_deck
+
+        first = generate_deck(
+            content=SAMPLE.read_text(),
+            template=SLIDE_TEMPLATE,
+            templates_dir=TEMPLATES,
+            specs_dir=SPECS,
+            out_dir=self.tmp / "v1",
+            chromium=CHROMIUM,
+        )
+        self.assertIn("html", first)
+        model = json.loads((self.tmp / "v1" / "deck.json").read_text())
+
+        second_dir = self.tmp / "v2"
+        generate_deck(
+            content="",
+            template=SLIDE_TEMPLATE,
+            templates_dir=TEMPLATES,
+            specs_dir=SPECS,
+            out_dir=second_dir,
+            chromium=CHROMIUM,
+            source_deck=model,
+            patch=[{"op": "set", "slide": 0, "field": "title", "value": "Revised"}],
+        )
+        revised = json.loads((second_dir / "deck.json").read_text())
+        self.assertEqual(revised["slides"][0]["title"], "Revised")
+        self.assertEqual(revised["slides"][1:], model["slides"][1:])
+        self.assertIn("Revised", (second_dir / "deck.html").read_text())
+
+
 def build_sample_pptx(path: Path, with_images: bool = False) -> Path:
     """A small .pptx exercising titles, bullets, tables, notes, and images."""
     from pptx import Presentation
