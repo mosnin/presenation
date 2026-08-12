@@ -138,6 +138,34 @@ cold-start — wait at least 5 minutes before treating a `running` job as
 stuck. On `failed`, report the `error` field to the user; do not silently
 retry more than once.
 
+A job that never reports back is failed automatically after 45 minutes, so
+`running` is never permanent.
+
+## Cancelling and retrying
+
+```bash
+POST /agent/v1/jobs/cancel   {"job_id": "..."}   # 409 if already finished
+POST /agent/v1/jobs/retry    {"job_id": "..."}   # 202, returns a NEW job_id
+```
+
+Cancelling does not interrupt a worker that is already running; it discards
+the result. Retry resubmits the same request as a new job — use it after a
+timeout, not after a validation error (that will fail the same way).
+
+## Error responses
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| 400 | The request is malformed; the `error` field names the problem | Fix and resubmit — do not retry unchanged |
+| 401 | Bad or missing API key | Stop and tell the user |
+| 404 | No such job for this key | Stop |
+| 429 | Rate limited (12/minute, 60/hour per account) | Wait `retry_after_seconds`, then continue |
+
+Submissions are validated up front, so mistakes come back immediately rather
+than as a failed job minutes later. Common 400s: `content` missing, a design
+spec passed to `kind: "presentation"` (use `deck`), an unsupported `formats`
+entry, or a `source_pptx_url` that isn't a public https URL.
+
 ## Notes
 
 - One job produces one artifact set; to make three decks, submit three jobs

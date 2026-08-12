@@ -37,8 +37,12 @@ POST /agent/v1/jobs   {"kind":"deck","request":{"content":"…","template":"midn
 GET  /agent/v1/jobs/status?id=…  → { status, artifacts:[{format,url,public_url?}] }
 ```
 
-Add `"publish": true` to any request to also place the artifact at a stable
-public URL.
+Plus `POST /agent/v1/jobs/cancel` and `…/retry`. Add `"publish": true` to any
+request to also place the artifact at a stable public URL.
+
+Requests are validated at submit time (immediate 400s, not failed jobs),
+rate limited per account (12/minute, 60/hour), and jobs stuck without a
+worker result are failed automatically after 45 minutes.
 
 ## Credits
 

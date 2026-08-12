@@ -51,8 +51,23 @@ can delegate presentation and document creation to**.
     `202 { job_id }`.
   - `GET /agent/v1/jobs/status?id=…` — status plus presigned R2 download
     URLs when finished.
+  - `POST /agent/v1/jobs/cancel` / `…/retry` — cancel a queued or running
+    job (its late callback is then ignored), or resubmit a request as a new
+    job.
   - `POST /modal/callback` — worker completion webhook, HMAC-SHA256 signed
     with `MODAL_CALLBACK_SECRET`.
+- **Validation** (`convex/validate.ts`) — per-kind request checks run at
+  submit time, so a bad field returns an immediate 400 naming it rather than
+  failing inside the worker minutes later. Also rejects design-spec themes
+  for `presentation` (they cannot produce PPTX) and non-public
+  `source_pptx_url` values, since the worker fetches that URL server-side.
+- **Rate limiting** (`jobs.checkRateLimit`) — 12 jobs/minute and 60/hour per
+  account, counted from recent job rows rather than a counter table, so
+  there are no extra writes and no window to reset.
+- **Stale-job reaper** (`convex/crons.ts` → `jobs.reapStale`) — every 10
+  minutes, jobs stuck in `queued`/`running` for 45 minutes are failed with an
+  explanatory error. Without it a lost Modal callback would leave a job
+  running forever.
 - **Dispatch** (`convex/dispatch.ts`) — a job insert schedules an action that
   POSTs to the Modal submit endpoint (Modal proxy-auth token headers).
 - **R2** via the official `@convex-dev/r2` component — Convex never proxies
@@ -152,6 +167,10 @@ which demonstrated that a declarative spec plus a scaled fixed canvas is
 enough to produce distinctive decks without a layout engine.
 
 ### `platform/tests` — what is actually verified
+
+`web/convex/validate.test.ts` covers the agent-API request validation
+(19 tests, including the SSRF host rules); it compiles and runs standalone
+because `validate.ts` has no Convex imports — `cd platform/web && npm test`.
 
 `tests/test_doc_engine.py` covers the layer that runs without live services:
 theme resolution from both sources (including the print-safety rules), the

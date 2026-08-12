@@ -6,7 +6,8 @@ export const jobStatus = v.union(
   v.literal("queued"),
   v.literal("running"),
   v.literal("succeeded"),
-  v.literal("failed")
+  v.literal("failed"),
+  v.literal("cancelled")
 );
 
 export const jobKind = v.union(
@@ -56,5 +57,9 @@ export default defineSchema({
     modalCallId: v.optional(v.string()),
     artifacts: v.optional(v.array(artifact)),
     completedAt: v.optional(v.number()),
-  }).index("by_user", ["userId"]),
+  })
+    .index("by_user", ["userId"])
+    // Lets the reaper find jobs stuck in queued/running without scanning the
+    // whole table (Convex appends _creationTime to every index).
+    .index("by_status", ["status"]),
 });

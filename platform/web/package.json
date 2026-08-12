@@ -8,7 +8,8 @@
     "start": "next start",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsc convex/validate.ts convex/validate.test.ts --outDir .test-build --module commonjs --target es2022 --strict --skipLibCheck --esModuleInterop && node .test-build/validate.test.js"
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.90",

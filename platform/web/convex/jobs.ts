@@ -14,6 +14,16 @@ import type { Doc, Id } from "./_generated/dataModel";
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour
 
+// Per-user submission limits. Generous enough for real agent workloads, low
+// enough that a runaway loop can't spend an afternoon of Modal compute.
+export const MAX_JOBS_PER_HOUR = 60;
+export const MAX_JOBS_PER_MINUTE = 12;
+
+// A job that never gets its Modal callback would otherwise sit in `running`
+// forever. The engine path can legitimately take a while (image pull, engine
+// boot, generation), so the cutoff is well past the worker's own timeout.
+export const STALE_JOB_TIMEOUT_MS = 45 * 60 * 1000;
+
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
@@ -88,6 +98,133 @@ export const getInternal = internalQuery({
   handler: async (ctx, { jobId }) => ctx.db.get(jobId),
 });
 
+// Rate limit check for the agent API. Returns null when the caller is under
+// both limits, or a { message, retryAfterSeconds } describing which one they
+// hit. Counting recent jobs beats a counter table: no extra writes, and it
+// self-heals if a window is skipped.
+export const checkRateLimit = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const now = Date.now();
+    const recent = await ctx.db
+      .query("jobs")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(MAX_JOBS_PER_HOUR + 1);
+
+    const inLastMinute = recent.filter(
+      (job) => now - job._creationTime < 60_000
+    );
+    if (inLastMinute.length >= MAX_JOBS_PER_MINUTE) {
+      const oldest = inLastMinute[inLastMinute.length - 1]._creationTime;
+      return {
+        message: `Rate limit: at most ${MAX_JOBS_PER_MINUTE} jobs per minute`,
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((60_000 - (now - oldest)) / 1000)
+        ),
+      };
+    }
+
+    const inLastHour = recent.filter(
+      (job) => now - job._creationTime < 3_600_000
+    );
+    if (inLastHour.length >= MAX_JOBS_PER_HOUR) {
+      const oldest = inLastHour[inLastHour.length - 1]._creationTime;
+      return {
+        message: `Rate limit: at most ${MAX_JOBS_PER_HOUR} jobs per hour`,
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((3_600_000 - (now - oldest)) / 1000)
+        ),
+      };
+    }
+    return null;
+  },
+});
+
+// Marks jobs that never reported back as failed, so nothing sits in `running`
+// forever when a Modal callback is lost. Scheduled from crons.ts.
+export const reapStale = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - STALE_JOB_TIMEOUT_MS;
+    let reaped = 0;
+    for (const status of ["queued", "running"] as const) {
+      const stale = await ctx.db
+        .query("jobs")
+        .withIndex("by_status", (q) =>
+          q.eq("status", status).lt("_creationTime", cutoff)
+        )
+        .take(100);
+      for (const job of stale) {
+        await ctx.db.patch(job._id, {
+          status: "failed" as const,
+          error:
+            `Timed out after ${Math.round(STALE_JOB_TIMEOUT_MS / 60000)} minutes` +
+            " without a result from the worker. The job may have crashed or" +
+            " its completion callback was lost; retry it.",
+          completedAt: Date.now(),
+        });
+        reaped++;
+      }
+    }
+    return reaped;
+  },
+});
+
+// Cancels a job the caller owns. Convex marks it cancelled immediately; a
+// worker already running keeps going until it finishes (Modal isn't told),
+// but its callback is ignored, so the job never flips back.
+export const cancelInternal = internalMutation({
+  args: { jobId: v.id("jobs"), userId: v.id("users") },
+  handler: async (ctx, { jobId, userId }) => {
+    const job = await ctx.db.get(jobId);
+    if (!job || job.userId !== userId) return { ok: false, reason: "not_found" };
+    if (job.status === "succeeded" || job.status === "failed") {
+      return { ok: false, reason: "already_finished" };
+    }
+    if (job.status === "cancelled") return { ok: true };
+    await ctx.db.patch(jobId, {
+      status: "cancelled" as const,
+      completedAt: Date.now(),
+    });
+    return { ok: true };
+  },
+});
+
+export const cancel = mutation({
+  args: { jobId: v.id("jobs") },
+  handler: async (ctx, { jobId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not signed in");
+    const job = await ctx.db.get(jobId);
+    if (!job || job.userId !== userId) throw new Error("Job not found");
+    if (job.status === "queued" || job.status === "running") {
+      await ctx.db.patch(jobId, {
+        status: "cancelled" as const,
+        completedAt: Date.now(),
+      });
+    }
+  },
+});
+
+// Resubmits a finished job's request as a new job, so a caller doesn't have
+// to reconstruct it after a timeout or a transient worker failure.
+export const retryInternal = internalMutation({
+  args: { jobId: v.id("jobs"), userId: v.id("users") },
+  handler: async (ctx, { jobId, userId }): Promise<Id<"jobs"> | null> => {
+    const job = await ctx.db.get(jobId);
+    if (!job || job.userId !== userId) return null;
+    return await createAndDispatchHelper(ctx, {
+      userId,
+      apiKeyId: job.apiKeyId,
+      kind: job.kind,
+      request: job.request,
+    });
+  },
+});
+
 export const setStatus = internalMutation({
   args: {
     jobId: v.id("jobs"),
@@ -97,6 +234,10 @@ export const setStatus = internalMutation({
     artifacts: v.optional(v.array(artifact)),
   },
   handler: async (ctx, { jobId, ...patch }) => {
+    const job = await ctx.db.get(jobId);
+    // A cancelled job stays cancelled: the worker may still be running and
+    // its late callback must not resurrect it.
+    if (!job || job.status === "cancelled") return;
     const done = patch.status === "succeeded" || patch.status === "failed";
     await ctx.db.patch(jobId, {
       ...patch,

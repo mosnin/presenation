@@ -229,6 +229,19 @@ function DownloadLinks({ jobId }: { jobId: Id<"jobs"> }) {
   );
 }
 
+function CancelButton({ jobId }: { jobId: Id<"jobs"> }) {
+  const cancel = useMutation(api.jobs.cancel);
+  return (
+    <button
+      className="danger"
+      onClick={() => void cancel({ jobId })}
+      title="A worker already running is not interrupted, but its result is discarded"
+    >
+      Cancel
+    </button>
+  );
+}
+
 export default function JobsPage() {
   return (
     <Shell>
@@ -271,6 +284,8 @@ function JobsTable() {
                 <td>
                   {job.status === "succeeded" && job.artifacts?.length ? (
                     <DownloadLinks jobId={job._id} />
+                  ) : job.status === "queued" || job.status === "running" ? (
+                    <CancelButton jobId={job._id} />
                   ) : (
                     <span className="hint">—</span>
                   )}

@@ -33,6 +33,25 @@ jobs:
           sudo apt-get install -y -qq chromium-browser || \
             sudo apt-get install -y -qq chromium
 
-      - name: Run tests
+      - name: Run doc-engine tests
         working-directory: platform
         run: python tests/test_doc_engine.py
+
+  agent-api-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # validate.ts has no Convex imports, so it compiles and runs on its own
+      # without a generated API or a deployment.
+      - name: Install TypeScript
+        working-directory: platform/web
+        run: npm install --no-save typescript
+
+      - name: Run validation tests
+        working-directory: platform/web
+        run: npm test

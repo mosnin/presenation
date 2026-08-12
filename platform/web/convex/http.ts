@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
 import { hmacSha256Hex, sha256Hex, timingSafeEqualHex } from "./lib/crypto";
+import { JOB_KINDS, validateJobRequest, type JobKind } from "./validate";
 import type { Id } from "./_generated/dataModel";
 
 const http = httpRouter();
@@ -66,18 +67,47 @@ http.route({
     } catch {
       return json({ error: "Body must be JSON" }, 400);
     }
-    const KINDS = ["presentation", "document", "deck", "style_preview"];
-    if (typeof body.kind !== "string" || !KINDS.includes(body.kind)) {
-      return json({ error: `kind must be one of ${KINDS.join(", ")}` }, 400);
+    if (typeof body.kind !== "string" || !JOB_KINDS.includes(body.kind as JobKind)) {
+      return json({ error: `kind must be one of ${JOB_KINDS.join(", ")}` }, 400);
     }
-    if (typeof body.request !== "object" || body.request === null) {
+    if (
+      typeof body.request !== "object" ||
+      body.request === null ||
+      Array.isArray(body.request)
+    ) {
       return json({ error: "request must be an object" }, 400);
+    }
+
+    const kind = body.kind as JobKind;
+    const invalid = validateJobRequest(
+      kind,
+      body.request as Record<string, unknown>
+    );
+    if (invalid) return json({ error: invalid }, 400);
+
+    const limited = await ctx.runQuery(internal.jobs.checkRateLimit, {
+      userId: agent.userId,
+    });
+    if (limited) {
+      return new Response(
+        JSON.stringify({
+          error: limited.message,
+          retry_after_seconds: limited.retryAfterSeconds,
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(limited.retryAfterSeconds),
+          },
+        }
+      );
     }
 
     const jobId = await ctx.runMutation(internal.jobs.createAndDispatch, {
       userId: agent.userId,
       apiKeyId: agent.keyId,
-      kind: body.kind as "presentation" | "document" | "deck" | "style_preview",
+      kind,
       request: body.request,
     });
     return json({ job_id: jobId, status: "queued" }, 202);
@@ -122,6 +152,94 @@ http.route({
       );
     }
     return json(result);
+  }),
+});
+
+// ---------------------------------------------------------------------------
+// Agent API: cancel a job
+//
+//   POST /agent/v1/jobs/cancel  { "job_id": "..." }
+//
+// A worker already running is not interrupted, but its result is discarded
+// and the job stays cancelled.
+// ---------------------------------------------------------------------------
+http.route({
+  path: "/agent/v1/jobs/cancel",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authenticateAgent(ctx, request);
+    if (!agent) return json({ error: "Invalid or missing API key" }, 401);
+
+    let body: { job_id?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "Body must be JSON" }, 400);
+    }
+    if (!body.job_id) return json({ error: "job_id is required" }, 400);
+
+    const result = await ctx.runMutation(internal.jobs.cancelInternal, {
+      jobId: body.job_id as Id<"jobs">,
+      userId: agent.userId,
+    });
+    if (!result.ok && result.reason === "not_found") {
+      return json({ error: "Job not found" }, 404);
+    }
+    if (!result.ok && result.reason === "already_finished") {
+      return json({ error: "Job has already finished" }, 409);
+    }
+    return json({ job_id: body.job_id, status: "cancelled" });
+  }),
+});
+
+// ---------------------------------------------------------------------------
+// Agent API: retry a job
+//
+//   POST /agent/v1/jobs/retry  { "job_id": "..." }
+//
+// Resubmits the same request as a NEW job and returns its id, so a caller
+// doesn't have to reconstruct the request after a timeout.
+// ---------------------------------------------------------------------------
+http.route({
+  path: "/agent/v1/jobs/retry",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authenticateAgent(ctx, request);
+    if (!agent) return json({ error: "Invalid or missing API key" }, 401);
+
+    let body: { job_id?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "Body must be JSON" }, 400);
+    }
+    if (!body.job_id) return json({ error: "job_id is required" }, 400);
+
+    const limited = await ctx.runQuery(internal.jobs.checkRateLimit, {
+      userId: agent.userId,
+    });
+    if (limited) {
+      return new Response(
+        JSON.stringify({
+          error: limited.message,
+          retry_after_seconds: limited.retryAfterSeconds,
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(limited.retryAfterSeconds),
+          },
+        }
+      );
+    }
+
+    const newJobId = await ctx.runMutation(internal.jobs.retryInternal, {
+      jobId: body.job_id as Id<"jobs">,
+      userId: agent.userId,
+    });
+    if (!newJobId) return json({ error: "Job not found" }, 404);
+    return json({ job_id: newJobId, status: "queued" }, 202);
   }),
 });
 
