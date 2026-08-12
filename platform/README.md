@@ -40,6 +40,15 @@ GET  /agent/v1/jobs/status?id=…  → { status, artifacts:[{format,url,public_u
 Plus `POST /agent/v1/jobs/cancel` and `…/retry`. Add `"publish": true` to any
 request to also place the artifact at a stable public URL.
 
+Themes can be **synthesized from a brand image** — pass `brand_image_url`
+(deck/document) and the palette is derived from a logo or screenshot, with
+text contrast checked, instead of naming a template.
+
+Deck jobs **verify their own layout**: every slide is measured in a real
+browser and anything that overflows the canvas is split or tightened until it
+fits, so generated decks don't ship clipped text (see `doc_engine/fit.py`;
+opt out with `"fit": false`).
+
 Requests are validated at submit time (immediate 400s, not failed jobs),
 rate limited per account (12/minute, 60/hour), and jobs stuck without a
 worker result are failed automatically after 45 minutes.

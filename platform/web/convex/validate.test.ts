@@ -171,6 +171,28 @@ test("style_preview: themes list is bounded", () => {
   bad("style_preview", { title: "T", themes: [1, 2] }, "themes");
 });
 
+test("brand_image_url: themes can come from an image", () => {
+  ok("deck", { content: "x", brand_image_url: "https://cdn.example.com/logo.png" });
+  ok("document", { content: "x", brand_image_url: "https://cdn.example.com/l.png" });
+});
+
+test("brand_image_url: same host rules as any fetched URL", () => {
+  bad("deck", { content: "x", brand_image_url: "http://cdn.example.com/l.png" }, "https");
+  bad(
+    "deck",
+    { content: "x", brand_image_url: "https://169.254.169.254/meta" },
+    "public host"
+  );
+});
+
+test("brand_image_url: rejected for PPTX output", () => {
+  bad(
+    "presentation",
+    { content: "x", brand_image_url: "https://cdn.example.com/l.png" },
+    "no effect"
+  );
+});
+
 // --- shared fields --------------------------------------------------------
 
 test("shared: publish must be boolean", () => {

@@ -298,6 +298,295 @@ class DeckPipelineTests(TempDirTest):
         self.assertEqual(set(out), {SLIDE_TEMPLATE})
 
 
+try:
+    from PIL import Image  # noqa: F401
+
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+
+@unittest.skipUnless(HAS_PIL, "Pillow not installed")
+class BrandThemeTests(TempDirTest):
+    """Deriving a theme from a logo or screenshot."""
+
+    def _logo(self, background: str, mark: str, name: str = "logo.png") -> Path:
+        from PIL import Image, ImageDraw
+
+        path = self.tmp / name
+        img = Image.new("RGB", (800, 400), background)
+        draw = ImageDraw.Draw(img)
+        draw.ellipse([80, 80, 320, 320], fill=mark)
+        img.save(path)
+        return path
+
+    def test_light_logo_gives_light_stage_and_brand_accent(self):
+        from doc_engine.brand import theme_from_image
+
+        theme = theme_from_image(self._logo("#FFFFFF", "#0E7C7B"))
+        self.assertEqual(theme.bg, "#ffffff")
+        self.assertEqual(theme.accent, "#0e7c7b")
+
+    def test_dark_source_gives_dark_stage(self):
+        from doc_engine.brand import theme_from_image
+
+        theme = theme_from_image(self._logo("#12141C", "#FF6B2C"))
+        self.assertEqual(theme.bg, "#12141c")
+        self.assertEqual(theme.accent, "#ff6b2c")
+
+    def test_text_always_readable_on_the_stage(self):
+        """The whole point: never emit a theme whose body text is unreadable."""
+        from doc_engine.brand import contrast_ratio, theme_from_image
+
+        for background, mark in [
+            ("#FFFFFF", "#0E7C7B"),
+            ("#12141C", "#FF6B2C"),
+            ("#7A4F9E", "#D62E7A"),  # mid-tone dominant
+            ("#FAFAFA", "#111111"),  # near-monochrome
+        ]:
+            theme = theme_from_image(self._logo(background, mark))
+
+            def rgb(value: str):
+                return tuple(int(value[i : i + 2], 16) for i in (1, 3, 5))
+
+            ratio = contrast_ratio(rgb(theme.text_color), rgb(theme.bg))
+            self.assertGreaterEqual(
+                ratio, 4.0, f"{background}/{mark} produced unreadable text"
+            )
+
+    def test_near_duplicate_colors_are_merged(self):
+        from PIL import Image
+
+        from doc_engine.brand import extract_palette
+
+        # A gradient of near-identical blues should collapse, not flood the
+        # palette with 30 shades.
+        path = self.tmp / "gradient.png"
+        img = Image.new("RGB", (200, 200))
+        for x in range(200):
+            for y in range(200):
+                img.putpixel((x, y), (20, 60, 200 + (x % 4)))
+        img.save(path)
+        self.assertLessEqual(len(extract_palette(path)), 2)
+
+    def test_spec_round_trips_through_the_normal_loader(self):
+        """A synthesized theme must be an ordinary design spec — editable and
+        loadable like any hand-written one."""
+        from doc_engine.brand import theme_from_image, theme_to_spec
+        from doc_engine.theme import load_theme_spec
+
+        original = theme_from_image(self._logo("#FFFFFF", "#0E7C7B"), name="Acme")
+        spec_path = self.tmp / "acme.md"
+        spec_path.write_text(theme_to_spec(original))
+
+        reloaded = load_theme_spec(spec_path)
+        self.assertEqual(reloaded.template, "Acme")
+        self.assertEqual(reloaded.accent, original.accent)
+        self.assertEqual(reloaded.bg, original.bg)
+        self.assertEqual(reloaded.heading_font, original.heading_font)
+
+    def test_unreadable_image_raises(self):
+        bogus = self.tmp / "bogus.png"
+        bogus.write_bytes(b"not an image")
+        from doc_engine.brand import theme_from_image
+
+        with self.assertRaises(Exception):
+            theme_from_image(bogus)
+
+
+class WebfontLoadingTests(unittest.TestCase):
+    def test_interactive_decks_do_not_block_paint_on_fonts(self):
+        """An external stylesheet blocks first paint; a slow font host must
+        not leave a viewer looking at a blank deck."""
+        from doc_engine import deck_render
+
+        theme = resolve_theme(DESIGN_SPEC, templates_dir=TEMPLATES, specs_dir=SPECS)
+        deck = {"title": "T", "slides": [{"layout": "title", "title": "T"}]}
+
+        interactive = deck_render.render_deck_html(deck, theme)
+        self.assertIn('media="print"', interactive)
+        self.assertIn("<noscript>", interactive)
+
+        # Printing and measuring must still block, or layout is measured
+        # against a fallback face.
+        printed = deck_render.render_deck_html(deck, theme, print_mode=True)
+        self.assertNotIn('media="print" onload', printed)
+
+
+def overstuffed_deck() -> dict:
+    """A deck built to overflow: a long bullet list, an unsplittable quote,
+    and a tall table."""
+    return {
+        "title": "Overstuffed",
+        "slides": [
+            {"layout": "title", "title": "Fits fine"},
+            {
+                "layout": "bullets",
+                "heading": "Way too much",
+                "items": [
+                    "Every one of these bullets is deliberately long so that "
+                    f"the list runs past the bottom edge of the canvas {i}"
+                    for i in range(12)
+                ],
+            },
+            {
+                "layout": "quote",
+                "text": "A single enormous quotation that cannot be split "
+                "into two slides because it is one continuous sentence, " * 6,
+            },
+            {
+                "layout": "table",
+                "heading": "Big table",
+                "header": ["A", "B"],
+                "rows": [[f"row {i}", f"value {i}"] for i in range(14)],
+            },
+        ],
+    }
+
+
+class FitSplitTests(unittest.TestCase):
+    """Splitting logic — pure functions, no browser needed."""
+
+    def test_split_is_even(self):
+        from doc_engine.fit import _split_items
+
+        chunks = _split_items(list(range(12)), 1.84)
+        self.assertEqual([len(c) for c in chunks], [6, 6])
+        self.assertEqual([item for c in chunks for item in c], list(range(12)))
+
+    def test_split_scales_with_overflow(self):
+        from doc_engine.fit import _split_items
+
+        # Three times too tall should divide into three, not two.
+        chunks = _split_items(list(range(12)), 2.9)
+        self.assertEqual(len(chunks), 3)
+
+    def test_single_item_cannot_split(self):
+        from doc_engine.fit import _split_items
+
+        self.assertEqual(_split_items(["only"], 3.0), [["only"]])
+
+    def test_unsplittable_slide_tightens_by_one_step(self):
+        from doc_engine.fit import DENSITY_STEPS, _repair_slide
+
+        slide = {"layout": "quote", "text": "x"}
+        metrics = {"fillRatio": 1.4}
+        first = _repair_slide(slide, metrics)
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]["density"], DENSITY_STEPS[0])
+        second = _repair_slide(first[0], metrics)
+        self.assertEqual(second[0]["density"], DENSITY_STEPS[1])
+
+    def test_density_escalation_terminates(self):
+        from doc_engine.fit import DENSITY_STEPS, _repair_slide
+
+        slide = {"layout": "quote", "text": "x", "density": DENSITY_STEPS[-1]}
+        result = _repair_slide(slide, {"fillRatio": 2.0})
+        # Returning the slide unchanged is what stops the outer loop.
+        self.assertEqual(result, [slide])
+
+    def test_image_text_splits_into_text_and_image(self):
+        from doc_engine.fit import _repair_slide
+
+        slide = {
+            "layout": "image_text",
+            "heading": "H",
+            "image": "/tmp/x.png",
+            "items": ["a", "b"],
+        }
+        result = _repair_slide(slide, {"fillRatio": 1.5})
+        self.assertEqual([s["layout"] for s in result], ["bullets", "image"])
+
+    def test_notes_stay_with_the_first_part(self):
+        from doc_engine.fit import _repair_slide
+
+        slide = {
+            "layout": "bullets",
+            "heading": "H",
+            "items": [f"item {i}" for i in range(8)],
+            "notes": "say this",
+        }
+        parts = _repair_slide(slide, {"fillRatio": 2.0})
+        self.assertGreater(len(parts), 1)
+        self.assertEqual(parts[0]["notes"], "say this")
+        self.assertTrue(all("notes" not in p for p in parts[1:]))
+
+
+@needs_chromium
+class FitMeasureTests(unittest.TestCase):
+    """The measure-and-repair loop against a real browser."""
+
+    def setUp(self) -> None:
+        self.theme = resolve_theme(
+            SLIDE_TEMPLATE, templates_dir=TEMPLATES, specs_dir=SPECS
+        )
+
+    def test_measurement_reports_overflow(self):
+        from doc_engine.fit import measure_deck
+
+        metrics = measure_deck(overstuffed_deck(), self.theme, CHROMIUM)
+        self.assertEqual(len(metrics), 4)
+        self.assertEqual(metrics[0]["overflowY"], 0, "title slide should fit")
+        self.assertGreater(metrics[1]["overflowY"], 100, "bullets should overflow")
+        self.assertGreater(metrics[3]["overflowY"], 0, "table should overflow")
+        for entry in metrics:
+            self.assertIn("fillRatio", entry)
+            self.assertGreater(entry["usableHeight"], 0)
+
+    def test_repair_makes_every_slide_fit(self):
+        from doc_engine.fit import fit_deck, measure_deck
+
+        fixed, report = fit_deck(overstuffed_deck(), self.theme, CHROMIUM)
+        self.assertTrue(report["fitted"], f"still overflowing: {report}")
+        self.assertGreater(report["slides_after"], report["slides_before"])
+        # Verify independently rather than trusting the loop's own report.
+        for entry in measure_deck(fixed, self.theme, CHROMIUM):
+            self.assertLessEqual(entry["overflowY"], 8)
+            self.assertLessEqual(entry["overflowX"], 8)
+
+    def test_content_is_preserved_across_repairs(self):
+        from doc_engine.fit import fit_deck
+
+        original = overstuffed_deck()
+        fixed, _ = fit_deck(original, self.theme, CHROMIUM)
+
+        def bullets_of(deck):
+            return [
+                item
+                for slide in deck["slides"]
+                if slide["layout"] == "bullets"
+                for item in slide["items"]
+            ]
+
+        self.assertEqual(bullets_of(fixed), bullets_of(original))
+
+    def test_a_deck_that_fits_is_left_alone(self):
+        from doc_engine.fit import fit_deck
+
+        deck = {
+            "title": "T",
+            "slides": [
+                {"layout": "title", "title": "Short"},
+                {"layout": "bullets", "heading": "Few", "items": ["a", "b"]},
+            ],
+        }
+        fixed, report = fit_deck(deck, self.theme, CHROMIUM)
+        self.assertTrue(report["fitted"])
+        self.assertEqual(report["repaired"], 0)
+        self.assertEqual(report["passes"], 1)
+        self.assertEqual(fixed["slides"], deck["slides"])
+
+    def test_measurement_failure_returns_the_original_deck(self):
+        """A broken browser must not lose the deck."""
+        from doc_engine.fit import fit_deck
+
+        deck = overstuffed_deck()
+        fixed, report = fit_deck(deck, self.theme, "/nonexistent/chromium")
+        self.assertFalse(report["fitted"])
+        self.assertIn("error", report)
+        self.assertEqual(fixed["slides"], deck["slides"])
+
+
 def build_sample_pptx(path: Path, with_images: bool = False) -> Path:
     """A small .pptx exercising titles, bullets, tables, notes, and images."""
     from pptx import Presentation

@@ -115,14 +115,14 @@ body {{
 }}
 
 .slide h1 {{
-  font-size: 148px;
+  font-size: calc(148px * var(--tscale, 1));
   line-height: 1.0;
   letter-spacing: -0.015em;
   font-weight: 800;
 }}
 
 .slide h2 {{
-  font-size: 84px;
+  font-size: calc(84px * var(--tscale, 1));
   line-height: 1.04;
   letter-spacing: -0.01em;
   font-weight: 700;
@@ -137,7 +137,7 @@ body {{
 }}
 
 .subtitle {{
-  font-size: 40px;
+  font-size: calc(40px * var(--tscale, 1));
   color: var(--muted);
   max-width: 1150px;
   line-height: 1.4;
@@ -155,7 +155,7 @@ body {{
 
 .slide.layout-section .kicker {{ font-size: 34px; }}
 
-.slide.layout-section h1 {{ font-size: 170px; }}
+.slide.layout-section h1 {{ font-size: calc(170px * var(--tscale, 1)); }}
 
 .slide.layout-section::after {{
   content: "";
@@ -169,7 +169,7 @@ body {{
 
 ul.bullets {{
   list-style: none;
-  font-size: 44px;
+  font-size: calc(44px * var(--tscale, 1));
   line-height: 1.35;
   max-width: 1480px;
 }}
@@ -191,7 +191,7 @@ ul.bullets li::before {{
 }}
 
 .paragraphs {{
-  font-size: 42px;
+  font-size: calc(42px * var(--tscale, 1));
   line-height: 1.5;
   max-width: 1420px;
   display: flex;
@@ -214,7 +214,7 @@ ul.bullets li::before {{
 .stat-card .value {{
   font-family: "{theme.heading_font}", sans-serif;
   font-style: {theme.heading_style};
-  font-size: 112px;
+  font-size: calc(112px * var(--tscale, 1));
   line-height: 1;
   color: var(--accent);
 }}
@@ -240,7 +240,7 @@ ul.bullets li::before {{
 blockquote {{
   font-family: "{theme.heading_font}", serif;
   font-style: {theme.heading_style};
-  font-size: 76px;
+  font-size: calc(76px * var(--tscale, 1));
   line-height: 1.22;
   margin-top: 50px;
   max-width: 1480px;
@@ -254,7 +254,7 @@ blockquote {{
 
 table {{
   border-collapse: collapse;
-  font-size: 36px;
+  font-size: calc(36px * var(--tscale, 1));
   width: 100%;
   max-width: 1560px;
 }}
@@ -324,6 +324,12 @@ td {{
 .split ul.bullets li {{ padding: 22px 0 22px 56px; }}
 
 .split ul.bullets li::before {{ top: 38px; }}
+
+/* Set by the fit engine (fit.py) when a slide's content cannot be split
+   across slides — scales the type down rather than letting it clip. */
+.slide.density-tight {{ --tscale: 0.86; }}
+.slide.density-tighter {{ --tscale: 0.74; }}
+.slide.density-tightest {{ --tscale: 0.62; }}
 
 .slide.layout-closing {{ align-items: flex-start; text-align: left; }}
 
@@ -582,7 +588,12 @@ def _render_slide(slide: dict) -> str:
         if slide.get("subheading"):
             parts.append(f'<p class="subtitle reveal">{_esc(slide["subheading"])}</p>')
 
-    return f'<div class="slide layout-{layout}">{"".join(parts)}</div>'
+    density = slide.get("density")
+    density_class = f" density-{density}" if density else ""
+    return (
+        f'<div class="slide layout-{layout}{density_class}">'
+        f'{"".join(parts)}</div>'
+    )
 
 
 _PRINT_CSS = """
@@ -630,9 +641,75 @@ html, body { height: auto; overflow: visible; background: var(--bg); }
 """
 
 
-def render_deck_html(deck: dict, theme: Theme, print_mode: bool = False) -> str:
+FIT_REPORT_ID = "presenton-fit-report"
+
+# Measures each slide's real content box against the usable area of the
+# 1920x1080 stage and writes the result into the DOM, where `chromium
+# --dump-dom` can retrieve it. Runs against the print layout (transform:
+# none, all slides laid out) so the numbers are unscaled CSS pixels.
+_MEASURE_JS = """
+(() => {
+  function measure() {
+    const slides = [...document.querySelectorAll(".slide")];
+    const report = slides.map((slide, index) => {
+      const style = getComputedStyle(slide);
+      const padTop = parseFloat(style.paddingTop);
+      const padBottom = parseFloat(style.paddingBottom);
+      const padLeft = parseFloat(style.paddingLeft);
+      const padRight = parseFloat(style.paddingRight);
+      const box = slide.getBoundingClientRect();
+      const usableHeight = slide.clientHeight - padTop - padBottom;
+      const usableWidth = slide.clientWidth - padLeft - padRight;
+
+      let contentHeight = 0;
+      let contentWidth = 0;
+      for (const child of slide.children) {
+        const rect = child.getBoundingClientRect();
+        if (rect.height === 0 && rect.width === 0) continue;
+        contentHeight = Math.max(contentHeight, rect.bottom - box.top - padTop);
+        contentWidth = Math.max(contentWidth, rect.right - box.left - padLeft);
+      }
+      const layoutClass = [...slide.classList].find((c) =>
+        c.startsWith("layout-")
+      );
+      return {
+        index,
+        layout: layoutClass ? layoutClass.slice("layout-".length) : null,
+        usableHeight,
+        usableWidth,
+        contentHeight: Math.round(contentHeight),
+        contentWidth: Math.round(contentWidth),
+        overflowY: Math.max(0, Math.round(contentHeight - usableHeight)),
+        overflowX: Math.max(0, Math.round(contentWidth - usableWidth)),
+        fillRatio: usableHeight > 0 ? contentHeight / usableHeight : 0,
+      };
+    });
+    const node = document.createElement("script");
+    node.type = "application/json";
+    node.id = "__FIT_REPORT_ID__";
+    node.textContent = JSON.stringify(report);
+    document.body.appendChild(node);
+  }
+  // Wait for webfonts: measuring against a fallback face gives wrong metrics.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(measure).catch(measure);
+  } else {
+    measure();
+  }
+})();
+""".replace("__FIT_REPORT_ID__", FIT_REPORT_ID)
+
+
+def render_deck_html(
+    deck: dict,
+    theme: Theme,
+    print_mode: bool = False,
+    measure: bool = False,
+) -> str:
     """Render the deck. With print_mode, emit the paged variant used to
-    produce a PDF (all slides visible, one page each, no navigation chrome)."""
+    produce a PDF (all slides visible, one page each, no navigation chrome).
+    With measure, emit that same layout plus the fit-measurement script."""
+    print_mode = print_mode or measure
     slides = "".join(_render_slide(slide) for slide in deck.get("slides", []))
     return f"""<!doctype html>
 <!-- Generated by Presenton doc-engine ({theme.template} theme).
@@ -644,12 +721,13 @@ def render_deck_html(deck: dict, theme: Theme, print_mode: bool = False) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(deck.get("title"))}</title>
-{google_fonts_links(theme)}
+{google_fonts_links(theme, blocking=print_mode)}
 <style>{_css(theme)}{_PRINT_CSS if print_mode else ""}</style>
 </head>
 <body>
 <div class="viewport"><div class="stage">{slides}</div></div>
 {"" if print_mode else '<div class="progress"></div><div class="hud"></div>'}
 {"" if print_mode else f"<script>{_JS}</script>"}
+{f"<script>{_MEASURE_JS}</script>" if measure else ""}
 </body>
 </html>"""

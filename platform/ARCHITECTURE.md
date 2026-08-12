@@ -156,6 +156,36 @@ be re-typeset in any theme. Pictures are downscaled and inlined as data URIs
 spacers. Original positioning is deliberately dropped — the value is a
 coherent design system, not a photocopy.
 
+**Self-verifying layout** (`fit.py`) is the part that makes generated decks
+trustworthy. Models reliably write six long bullets where four fit, and the
+usual result is content silently clipped by the canvas. Instead of guessing
+at limits, the deck is rendered in the same headless browser that produces
+the PDF, and a measurement script reports every slide's real content box
+against the usable area of the stage. Slides that overflow are repaired
+structurally — a bullet list divides evenly across slides, a table's rows
+split with the header repeating, an `image_text` slide separates into copy
+and picture — and only a slide that genuinely cannot be divided (one long
+quote) falls back to stepping the type scale down via a `--tscale` CSS
+variable. Then it measures again, because a repair can overflow too.
+
+The loop is deterministic and needs no model: measurement plus rules, up to
+four passes. Each deck job writes a `fit-report.json` recording passes,
+repairs, and slide counts before/after. If the browser fails, the original
+deck is returned with the error noted — a deck that renders beats no deck.
+
+**Themes from a brand image** (`brand.py`) removes theme authoring entirely.
+Most people can't write a design spec but already have a logo or a product
+screenshot. The image is quantized, near-identical colors are merged, and
+then colors are assigned by *role* rather than frequency: the background is
+the dominant tone pushed to an extreme (a deck on mid-grey is muddy), the
+accent is the most saturated color that stands off that background, and the
+text color is checked for a real contrast ratio before use — a theme whose
+body copy is unreadable is worse than no theme. Fonts are deliberately not
+inferred; identifying a typeface from pixels is a different problem and
+guessing wrong is worse than a clean default. The result serializes to an
+ordinary design spec (`theme_to_spec`), so it can be reviewed, hand-edited,
+and committed like any other theme.
+
 **Style previews** (`preview.py`) render the same title slide across
 candidate themes as PNGs, so the choice of look is made by looking rather
 than by guessing from a theme name.

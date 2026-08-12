@@ -182,6 +182,11 @@ python -m doc_engine --artifact previews --content "Q3 Sales Report" \
   --templates-dir ../templates --specs-dir design-specs \
   --out /tmp/previews --chromium /usr/bin/chromium
 
+# Deck themed from a brand image (logo, screenshot) instead of a template
+python -m doc_engine --artifact deck --brand-image ~/logo.png \
+  --content-file examples/brief.md \
+  --templates-dir ../templates --specs-dir design-specs --out /tmp/branded
+
 # Convert an existing PowerPoint into a themed web deck
 python -m doc_engine --artifact deck --from-pptx ~/existing.pptx \
   --template paper-zine --formats html \

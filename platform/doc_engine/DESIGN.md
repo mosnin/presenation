@@ -47,6 +47,18 @@ layouts. A "momentum" report visibly belongs to the same family as a
   the deck model, so a deck someone already has can be re-typeset in any
   theme. Pictures are downscaled and inlined as data URIs; sub-80px images
   are skipped as icons. Original positioning is dropped by design.
+- `fit.py` — **self-verifying layout**. Renders the deck headlessly, measures
+  each slide's content box against the stage's usable area, and repairs
+  overflow: even splits for bullets/prose/tables, `image_text` separated into
+  copy and picture, and a type-scale step-down (`--tscale`) only for content
+  that cannot be divided. Re-measures after each pass, up to four. Verified
+  by measuring the repaired deck independently rather than trusting the
+  loop's own report.
+- `brand.py` — **themes synthesized from a logo or screenshot**. Quantizes
+  the image, merges near-duplicate colors, and assigns background / accent /
+  text by role and contrast rather than by frequency. Text contrast is
+  verified (>= 4.0) before a theme is returned. Serializes to a normal
+  design spec so it can be edited by hand afterwards.
 - `preview.py` — renders the same title slide across candidate themes as
   PNGs ("show, don't tell"), so the look is chosen by looking. One Chromium
   screenshot per candidate; no LLM call, no engine boot.

@@ -63,6 +63,13 @@ Design specs (for `deck` and `document` only):
 
 Passing a design spec to `kind: "presentation"` fails; use `deck` instead.
 
+**On-brand without a theme:** for `deck` and `document`, pass
+`brand_image_url` (a public https URL to a logo, screenshot, or product
+image) instead of `template`. The palette is derived from the image — stage,
+accent, and a text color checked for readable contrast. Use this when the
+user wants it to match their brand and hasn't named a template. It does not
+apply to `presentation` (PPTX needs a real slide template).
+
 ## Submitting a job
 
 ```bash
@@ -92,7 +99,11 @@ to anyone with the URL).
 
 - `presentation`: `export_as` (`"pptx"` | `"pdf"`, default `pptx`),
   `n_slides` (omit to let the model choose), `language`, `tone`.
-- `deck`: `formats` (array of `"html"`, `"pdf"`; default `["html"]`) and
+- `deck`: `formats` (array of `"html"`, `"pdf"`; default `["html"]`),
+  `fit` (default true — every slide is measured in a real browser and
+  overflowing content is split across slides or tightened, so decks never
+  ship with clipped text; set false only if you need the slide count to
+  match your input exactly), and
   `source_pptx_url` — a URL to an existing `.pptx` to convert instead of
   generating. Conversion keeps text, bullets, tables, speaker notes, and
   embedded images; exact positioning is not carried over, since the point is

@@ -22,7 +22,17 @@ def main() -> None:
         default="document",
     )
     parser.add_argument("--from-pptx", default=None, help="convert an existing .pptx")
+    parser.add_argument(
+        "--brand-image",
+        default=None,
+        help="derive the theme from a logo/screenshot instead of --template",
+    )
     parser.add_argument("--themes", default=None, help="comma-separated, for previews")
+    parser.add_argument(
+        "--no-fit",
+        action="store_true",
+        help="skip the measure-and-repair layout pass (decks only)",
+    )
     parser.add_argument("--template", default="general")
     parser.add_argument("--content", default=None)
     parser.add_argument("--content-file", default=None)
@@ -68,6 +78,8 @@ def main() -> None:
             formats=args.formats.split(",") if args.formats else ["html"],
             source_pptx=args.from_pptx,
             chromium=args.chromium,
+            fit=not args.no_fit,
+            brand_image=args.brand_image,
         )
     else:
         outputs = generate_document(
@@ -79,6 +91,7 @@ def main() -> None:
             specs_dir=args.specs_dir,
             out_dir=args.out,
             chromium=args.chromium,
+            brand_image=args.brand_image,
         )
     print(json.dumps(outputs, indent=2))
 

@@ -16,7 +16,21 @@ from . import (
     render,
     structure,
 )
-from .theme import resolve_theme
+from . import brand
+from . import fit as fit_engine
+from .theme import Theme, resolve_theme
+
+
+def _theme_for(
+    template: str,
+    templates_dir,
+    specs_dir,
+    brand_image=None,
+) -> Theme:
+    """A brand image, when given, replaces the named theme entirely."""
+    if brand_image:
+        return brand.theme_from_image(brand_image)
+    return resolve_theme(template, templates_dir=templates_dir, specs_dir=specs_dir)
 
 
 def generate_document(
@@ -28,6 +42,7 @@ def generate_document(
     out_dir: str | Path = "out",
     chromium: str = "/usr/bin/chromium",
     specs_dir: str | Path | None = None,
+    brand_image: str | Path | None = None,
 ) -> dict[str, str]:
     """Generate an A4 document in a template/spec aesthetic.
 
@@ -44,7 +59,7 @@ def generate_document(
     else:
         doc = structure.parse_markdown(content)
 
-    theme = resolve_theme(template, templates_dir=templates_dir, specs_dir=specs_dir)
+    theme = _theme_for(template, templates_dir, specs_dir, brand_image)
     html_text = render.render_html(doc, theme)
 
     outputs: dict[str, str] = {}
@@ -71,6 +86,8 @@ def generate_deck(
     formats: list[str] | None = None,
     source_pptx: str | Path | None = None,
     chromium: str = "/usr/bin/chromium",
+    fit: bool = True,
+    brand_image: str | Path | None = None,
 ) -> dict[str, str]:
     """Generate a presentation deck.
 
@@ -93,7 +110,14 @@ def generate_deck(
     else:
         deck = deck_mod.markdown_to_deck(content)
 
-    theme = resolve_theme(template, templates_dir=templates_dir, specs_dir=specs_dir)
+    theme = _theme_for(template, templates_dir, specs_dir, brand_image)
+
+    # Measure the rendered deck and repair anything that overflows the
+    # canvas before writing it out (see fit.py). Deterministic, no model.
+    if fit:
+        deck, fit_report = fit_engine.fit_deck(deck, theme, chromium)
+        (out_dir / "fit-report.json").write_text(json.dumps(fit_report, indent=2))
+
     (out_dir / "deck.json").write_text(json.dumps(deck, indent=2))
 
     outputs: dict[str, str] = {}

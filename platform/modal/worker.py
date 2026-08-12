@@ -247,6 +247,8 @@ def _run_document_job(job_id: str, request: dict) -> list[dict]:
     from doc_engine.pipeline import generate_document
 
     publish = bool(request.get("publish"))
+    brand_url = request.get("brand_image_url")
+    brand_image = _fetch_source_file(brand_url, ".img") if brand_url else None
     outputs = generate_document(
         content=request.get("content", ""),
         instructions=request.get("instructions"),
@@ -254,6 +256,7 @@ def _run_document_job(job_id: str, request: dict) -> list[dict]:
         formats=request.get("formats", ["pdf"]),
         out_dir="/tmp/doc-out",
         chromium="/usr/bin/chromium",
+        brand_image=brand_image,
         **_doc_engine_kwargs(),
     )
     return [
@@ -285,6 +288,8 @@ def _run_deck_job(job_id: str, request: dict) -> list[dict]:
     publish = bool(request.get("publish"))
     source_url = request.get("source_pptx_url")
     source_pptx = _fetch_source_file(source_url, ".pptx") if source_url else None
+    brand_url = request.get("brand_image_url")
+    brand_image = _fetch_source_file(brand_url, ".img") if brand_url else None
 
     outputs = generate_deck(
         content=request.get("content", ""),
@@ -294,6 +299,10 @@ def _run_deck_job(job_id: str, request: dict) -> list[dict]:
         source_pptx=source_pptx,
         out_dir="/tmp/deck-out",
         chromium="/usr/bin/chromium",
+        # Measure the rendered deck and repair overflowing slides before
+        # export. Callers can opt out with fit: false.
+        fit=request.get("fit", True) is not False,
+        brand_image=brand_image,
         **_doc_engine_kwargs(),
     )
     return [

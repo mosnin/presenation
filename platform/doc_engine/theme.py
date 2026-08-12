@@ -98,18 +98,35 @@ def _darken(hex_color: str, factor: float = 0.75) -> str:
     )
 
 
-def google_fonts_links(theme: Theme) -> str:
-    """<link> tags loading the theme's webfonts, or "" when it bundles TTFs."""
+def google_fonts_links(theme: Theme, blocking: bool = True) -> str:
+    """<link> tags loading the theme's webfonts, or "" when it bundles TTFs.
+
+    An external stylesheet blocks first paint, so a slow or unreachable font
+    host leaves a viewer staring at a blank deck. With blocking=False the
+    sheet is fetched as print media and promoted on load, which never blocks
+    rendering — the deck appears immediately in fallback faces and reflows
+    when the fonts arrive.
+
+    Keep blocking=True wherever the rendered result is measured or printed:
+    there, laying out against a fallback face would give wrong numbers.
+    """
     from urllib.parse import quote
 
     if not theme.webfonts:
         return ""
     families = "&".join(f"family={quote(f, safe=':;@,')}" for f in theme.webfonts)
-    return (
+    href = f"https://fonts.googleapis.com/css2?{families}&display=swap"
+    preconnect = (
         '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
-        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
-        f'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?{families}'
-        '&display=swap">'
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    )
+    if blocking:
+        return f'{preconnect}\n<link rel="stylesheet" href="{href}">'
+    return (
+        f"{preconnect}\n"
+        f'<link rel="stylesheet" href="{href}" media="print"'
+        " onload=\"this.media='all'\">\n"
+        f'<noscript><link rel="stylesheet" href="{href}"></noscript>'
     )
 
 

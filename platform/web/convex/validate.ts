@@ -68,20 +68,20 @@ function checkFormats(
   return null;
 }
 
-function checkSourceUrl(value: unknown): string | null {
+function checkSourceUrl(value: unknown, field = "source_pptx_url"): string | null {
   if (value === undefined) return null;
-  if (!isString(value)) return "source_pptx_url must be a string";
+  if (!isString(value)) return `${field} must be a string`;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return "source_pptx_url must be a valid URL";
+    return `${field} must be a valid URL`;
   }
   if (url.protocol !== "https:") {
-    return "source_pptx_url must use https";
+    return `${field} must use https`;
   }
   if (BLOCKED_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname))) {
-    return "source_pptx_url must point at a public host";
+    return `${field} must point at a public host`;
   }
   return null;
 }
@@ -105,6 +105,16 @@ export function validateJobRequest(
   }
   if (isString(request.content) && request.content.length > MAX_CONTENT_CHARS) {
     return `content must be under ${MAX_CONTENT_CHARS} characters`;
+  }
+  // Derives the theme from a logo/screenshot; fetched server-side, so it
+  // gets the same host rules as any other caller-supplied URL.
+  const brandError = checkSourceUrl(request.brand_image_url, "brand_image_url");
+  if (brandError) return brandError;
+  if (
+    request.brand_image_url !== undefined &&
+    kind === "presentation"
+  ) {
+    return 'brand_image_url has no effect on kind "presentation" — a synthesized theme cannot produce PPTX; use kind "deck" or "document"';
   }
 
   switch (kind) {
