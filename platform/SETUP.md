@@ -176,6 +176,13 @@ python -m doc_engine --artifact deck --template midnight-gold \
   --templates-dir ../templates --specs-dir design-specs \
   --out /tmp/deck-out --chromium /usr/bin/chromium
 
+# Deck plus a speaker script (cues + timing budget)
+python -m doc_engine --artifact deck --template momentum \
+  --content-file examples/brief.md --formats html,script \
+  --templates-dir ../templates --specs-dir design-specs \
+  --out /tmp/deck-out --chromium /usr/bin/chromium
+# then open deck.html and press P for the presenter view
+
 # Style previews: one title-slide PNG per theme
 python -m doc_engine --artifact previews --content "Q3 Sales Report" \
   --themes momentum,midnight-gold,swiss-crimson \

@@ -33,6 +33,10 @@ guessing a URL. Never print the key back to the user or write it into files.
    mention that. If the job was published, give the public URL instead — it
    is stable.
 
+For a `deck` the user will actually present, mention that pressing **P**
+opens a presenter view with notes and a timer, and offer the `script` format
+if they want the speaker notes as a document.
+
 ## Choosing the kind
 
 | Kind | Produces | Use for |
@@ -99,7 +103,11 @@ to anyone with the URL).
 
 - `presentation`: `export_as` (`"pptx"` | `"pdf"`, default `pptx`),
   `n_slides` (omit to let the model choose), `language`, `tone`.
-- `deck`: `formats` (array of `"html"`, `"pdf"`; default `["html"]`),
+- `deck`: `formats` (array of `"html"`, `"pdf"`, `"script"`; default
+  `["html"]` — `script` is a markdown speaker script with timings),
+  `narrate` (default true — adds per-slide speaker cues and a timing
+  estimate, and powers the deck's presenter view; existing notes from a
+  converted PowerPoint are kept),
   `fit` (default true — every slide is measured in a real browser and
   overflowing content is split across slides or tightened, so decks never
   ship with clipped text; set false only if you need the slide count to

@@ -16,6 +16,9 @@ from pathlib import Path
 
 from .theme import Theme, google_fonts_links
 
+# Element ids the runtime scripts read data from / write results to.
+PRESENTER_DATA_ID = "presenton-presenter-data"
+
 
 def _embedded_font_faces(theme: Theme) -> str:
     """Embed the heading/body font files (when the theme bundles TTFs) so the
@@ -356,6 +359,94 @@ td {{
   to {{ opacity: 1; transform: none; }}
 }}
 
+/* Presenter view: a separate window on the speaker's screen. Deliberately
+   plain and high-contrast — it is read at a glance, in a dark room. */
+body.presenter {{
+  background: #0e0f14;
+  color: #e9ecf5;
+  overflow: auto;
+  font-family: system-ui, sans-serif;
+}}
+
+body.presenter .viewport,
+body.presenter .progress,
+body.presenter .hud {{ display: none !important; }}
+
+.presenter-shell {{
+  padding: 28px 32px 40px;
+  max-width: 1100px;
+  margin: 0 auto;
+}}
+
+.presenter-bar {{
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  border-bottom: 1px solid rgba(233, 236, 245, 0.18);
+  padding-bottom: 14px;
+  margin-bottom: 22px;
+}}
+
+.presenter-bar .clock {{
+  font-size: 40px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}}
+
+.presenter-bar .counter {{ font-size: 18px; color: #98a0b8; }}
+
+.presenter-bar .budget {{ font-size: 15px; color: #98a0b8; margin-left: auto; }}
+
+.presenter-bar .budget.over {{ color: #ff8b6b; }}
+
+.presenter-now {{
+  font-size: 27px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}}
+
+.presenter-notes {{
+  font-size: 22px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 4px solid #7aa2ff;
+  padding: 20px 24px;
+  border-radius: 6px;
+  min-height: 130px;
+}}
+
+.presenter-next {{
+  margin-top: 26px;
+  font-size: 17px;
+  color: #98a0b8;
+}}
+
+.presenter-next strong {{ color: #e9ecf5; font-weight: 600; }}
+
+.presenter-controls {{
+  margin-top: 26px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}}
+
+.presenter-controls button {{
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(233, 236, 245, 0.25);
+  background: transparent;
+  color: #e9ecf5;
+  cursor: pointer;
+}}
+
+.presenter-hint {{
+  margin-top: 20px;
+  font-size: 14px;
+  color: #6f7893;
+}}
+
 /* Sits over the stage when the window is exactly 16:9, and over the
    letterbox otherwise — so it carries its own contrast. */
 .hud {{
@@ -416,6 +507,7 @@ _JS = """
     progress.style.width = `${((index + 1) / slides.length) * 100}%`;
     counter.textContent = `${index + 1} / ${slides.length}`;
     if (pushHash) history.replaceState(null, "", `#${index + 1}`);
+    pushToPresenter();
   }
 
   addEventListener("resize", fit);
@@ -429,6 +521,7 @@ _JS = """
       show(index - 1);
     } else if (event.key === "Home") show(0);
     else if (event.key === "End") show(slides.length - 1);
+    else if (event.key === "p" || event.key === "P") openPresenter();
   });
 
   let touchX = null;
@@ -450,11 +543,143 @@ _JS = """
     show(index + (e.clientX < innerWidth / 3 ? -1 : 1));
   });
 
+  // --- Presenter view -----------------------------------------------
+  // The same file, opened with ?presenter=1 in a second window. The two
+  // windows talk via postMessage on the opener handle, which works from
+  // file:// where BroadcastChannel and localStorage do not.
+  const notes = JSON.parse(
+    document.getElementById("__PRESENTER_DATA_ID__")?.textContent || "[]"
+  );
+  const isPresenter = location.search.includes("presenter=1");
+  let presenterWindow = null;
+
+  function openPresenter() {
+    if (presenterWindow && !presenterWindow.closed) {
+      presenterWindow.focus();
+      return;
+    }
+    presenterWindow = open(
+      location.pathname + "?presenter=1",
+      "presenton-presenter",
+      "width=980,height=720"
+    );
+  }
+
+  function pushToPresenter() {
+    if (presenterWindow && !presenterWindow.closed) {
+      presenterWindow.postMessage({ type: "slide", index }, "*");
+    }
+  }
+
+  function pad(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function clock(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60);
+    return `${m}:${pad(totalSeconds % 60)}`;
+  }
+
+  function renderPresenter(current) {
+    const entry = notes[current] || {};
+    const next = notes[current + 1];
+    document.querySelector(".presenter-now").textContent =
+      `${current + 1}. ${entry.label || entry.layout || ""}`;
+    document.querySelector(".presenter-notes").textContent =
+      entry.notes || "No notes for this slide.";
+    document.querySelector(".counter").textContent =
+      `slide ${current + 1} of ${notes.length}`;
+    document.querySelector(".presenter-next").innerHTML = next
+      ? `Next: <strong>${next.label || next.layout}</strong>`
+      : "Next: <strong>end of deck</strong>";
+    const budget = notes
+      .slice(0, current + 1)
+      .reduce((sum, s) => sum + (s.seconds || 0), 0);
+    document.querySelector(".budget").textContent =
+      `planned ${clock(budget)} by here · ${clock(
+        notes.reduce((sum, s) => sum + (s.seconds || 0), 0)
+      )} total`;
+  }
+
+  if (isPresenter) {
+    document.body.classList.add("presenter");
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<div class="presenter-shell">
+         <div class="presenter-bar">
+           <span class="clock">0:00</span>
+           <span class="counter"></span>
+           <span class="budget"></span>
+         </div>
+         <div class="presenter-now"></div>
+         <div class="presenter-notes"></div>
+         <div class="presenter-next"></div>
+         <div class="presenter-controls">
+           <button data-nav="-1">&larr; Previous</button>
+           <button data-nav="1">Next &rarr;</button>
+           <button data-reset="1">Reset timer</button>
+         </div>
+         <p class="presenter-hint">Arrow keys work here too. Keep this
+           window on your screen and the deck on the projector.</p>
+       </div>`
+    );
+
+    let started = null;
+    const clockEl = document.querySelector(".clock");
+    const budgetEl = document.querySelector(".budget");
+    setInterval(() => {
+      if (started === null) return;
+      const elapsed = Math.floor((performance.now() - started) / 1000);
+      clockEl.textContent = clock(elapsed);
+      const planned = notes.reduce((sum, s) => sum + (s.seconds || 0), 0);
+      budgetEl.classList.toggle("over", elapsed > planned);
+    }, 1000);
+
+    function navigate(delta) {
+      if (started === null) started = performance.now();
+      if (opener && !opener.closed) {
+        opener.postMessage({ type: "nav", delta }, "*");
+      }
+    }
+
+    addEventListener("message", (event) => {
+      if (event.data?.type === "slide") {
+        if (started === null) started = performance.now();
+        renderPresenter(event.data.index);
+      }
+    });
+    addEventListener("keydown", (event) => {
+      if (["ArrowRight", "ArrowDown", " "].includes(event.key)) {
+        event.preventDefault();
+        navigate(1);
+      } else if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
+        event.preventDefault();
+        navigate(-1);
+      }
+    });
+    document.addEventListener("click", (event) => {
+      const nav = event.target.closest("[data-nav]");
+      if (nav) navigate(Number(nav.dataset.nav));
+      if (event.target.closest("[data-reset]")) started = performance.now();
+    });
+
+    // Ask the deck window which slide it is on.
+    if (opener && !opener.closed) opener.postMessage({ type: "hello" }, "*");
+    renderPresenter(0);
+    return; // the presenter window never runs the deck itself
+  }
+
+  addEventListener("message", (event) => {
+    const data = event.data || {};
+    if (data.type === "nav") show(index + data.delta);
+    else if (data.type === "hello") pushToPresenter();
+  });
+
   fit();
   const fromHash = parseInt(location.hash.slice(1), 10);
   show(Number.isFinite(fromHash) ? fromHash - 1 : 0, false);
 })();
-"""
+""".replace("__PRESENTER_DATA_ID__", PRESENTER_DATA_ID)
 
 
 def _esc(value: object) -> str:
@@ -687,7 +912,7 @@ _MEASURE_JS = """
     const node = document.createElement("script");
     node.type = "application/json";
     node.id = "__FIT_REPORT_ID__";
-    node.textContent = JSON.stringify(report);
+    node.textContent = JSON.stringify(report).replace(/</g, "\\u003c");
     document.body.appendChild(node);
   }
   // Wait for webfonts: measuring against a fallback face gives wrong metrics.
@@ -698,6 +923,36 @@ _MEASURE_JS = """
   }
 })();
 """.replace("__FIT_REPORT_ID__", FIT_REPORT_ID)
+
+
+def _presenter_data(deck: dict) -> str:
+    """Per-slide notes and timings for the presenter window."""
+    import json
+
+    entries = []
+    for slide in deck.get("slides", []):
+        label = (
+            slide.get("heading")
+            or slide.get("title")
+            or (slide.get("text") or "")[:48]
+            or slide.get("layout", "")
+        )
+        entries.append(
+            {
+                "label": label,
+                "layout": slide.get("layout"),
+                "notes": slide.get("notes"),
+                "seconds": slide.get("seconds"),
+            }
+        )
+    # JSON escaping does not escape "</script>", so slide text containing it
+    # would close the tag and execute as HTML. Escaping "<" keeps the payload
+    # valid JSON and inert as markup.
+    payload = json.dumps(entries).replace("<", "\\u003c")
+    return (
+        f'<script type="application/json" id="{PRESENTER_DATA_ID}">'
+        f"{payload}</script>"
+    )
 
 
 def render_deck_html(
@@ -715,7 +970,8 @@ def render_deck_html(
 <!-- Generated by Presenton doc-engine ({theme.template} theme).
      Fixed-stage technique after frontend-slides (MIT,
      github.com/zarazhangrui/frontend-slides). Self-contained: no runtime
-     dependencies. Navigate with arrows/space, tap/swipe on touch. -->
+     dependencies. Navigate with arrows/space, tap/swipe on touch;
+     press P for the presenter view (notes, next slide, timer). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -727,6 +983,7 @@ def render_deck_html(
 <body>
 <div class="viewport"><div class="stage">{slides}</div></div>
 {"" if print_mode else '<div class="progress"></div><div class="hud"></div>'}
+{"" if print_mode else _presenter_data(deck)}
 {"" if print_mode else f"<script>{_JS}</script>"}
 {f"<script>{_MEASURE_JS}</script>" if measure else ""}
 </body>

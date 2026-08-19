@@ -40,6 +40,10 @@ GET  /agent/v1/jobs/status?id=…  → { status, artifacts:[{format,url,public_u
 Plus `POST /agent/v1/jobs/cancel` and `…/retry`. Add `"publish": true` to any
 request to also place the artifact at a stable public URL.
 
+Decks come **presentable**: per-slide speaker cues, a timing budget, an
+optional `script` artifact, and a presenter view in the deck itself (press
+**P** for notes, next slide, and a timer on your own screen).
+
 Content is **routed to the layout it deserves**: figures become stat cards,
 dated milestones become a timeline, quotes keep their attribution — detected
 deterministically from plain prose, with no extra model call.

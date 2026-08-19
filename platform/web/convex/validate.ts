@@ -18,7 +18,7 @@ export const JOB_KINDS: JobKind[] = [
 // because the failure would otherwise surface only after a worker boot.
 const DESIGN_SPEC_THEMES = ["midnight-gold", "paper-zine", "swiss-crimson"];
 
-const DECK_FORMATS = ["html", "pdf"];
+const DECK_FORMATS = ["html", "pdf", "script"];
 const DOCUMENT_FORMATS = ["pdf", "docx", "html"];
 const EXPORT_AS = ["pptx", "pdf"];
 
@@ -96,6 +96,11 @@ export function validateJobRequest(
 ): string | null {
   if (request.publish !== undefined && typeof request.publish !== "boolean") {
     return "publish must be a boolean";
+  }
+  for (const flag of ["fit", "narrate"]) {
+    if (request[flag] !== undefined && typeof request[flag] !== "boolean") {
+      return `${flag} must be a boolean`;
+    }
   }
   if (request.template !== undefined && !nonEmptyString(request.template)) {
     return "template must be a non-empty string";

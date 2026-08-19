@@ -64,6 +64,14 @@ layouts. A "momentum" report visibly belongs to the same family as a
   quotations keep their attribution. Conservative by construction (every
   item in a group must match), since a false positive is worse than a missed
   conversion. Applies to documents and decks alike.
+- `narrate.py` — **speaker cues, timing, presenter view**. Per-slide prompts
+  and a duration estimate derived from the deck model; a `script` output; and
+  a presenter window in the deck itself (press P) showing notes, next slide,
+  timer, and planned-vs-elapsed. Cues are prompts, not a script — a
+  deterministic pass cannot know the argument being made.
+  Note for anyone editing the payload: JSON embedded in a `<script>` tag must
+  escape `<`. JSON escaping alone leaves `</script>` intact, so slide text
+  containing it would close the tag and execute as HTML.
 - `patch.py` — **surgical deck edits**: set/set_item/replace/insert/delete/
   move/set_meta over the deck model, so an agent fixes one slide instead of
   regenerating. Indexes resolve against slide identity so batched ops don't

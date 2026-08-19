@@ -81,6 +81,8 @@ _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".pdf": "application/pdf",
     ".png": "image/png",
+    ".md": "text/markdown; charset=utf-8",
+    ".json": "application/json",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
@@ -192,8 +194,14 @@ def _store(
     job_id: str, local_path: Path, name: str, fmt: str, publish: bool
 ) -> dict:
     """Upload one artifact to the private bucket, optionally publish a public
-    copy, and return the artifact record sent back to Convex."""
-    r2_key = f"jobs/{job_id}/{name}.{fmt}"
+    copy, and return the artifact record sent back to Convex.
+
+    The stored key keeps the file's real extension (a `script` artifact is a
+    .md file), so a download opens in the right application; `format` stays
+    the label callers asked for.
+    """
+    extension = local_path.suffix.lstrip(".") or fmt
+    r2_key = f"jobs/{job_id}/{name}.{extension}"
     size = _upload_to_r2(local_path, r2_key)
     record = {"format": fmt, "r2_key": r2_key, "bytes": size}
     if publish:
@@ -306,6 +314,7 @@ def _run_deck_job(job_id: str, request: dict) -> list[dict]:
         # Measure the rendered deck and repair overflowing slides before
         # export. Callers can opt out with fit: false.
         fit=request.get("fit", True) is not False,
+        narrate=request.get("narrate", True) is not False,
         brand_image=brand_image,
         **_doc_engine_kwargs(),
     )

@@ -111,7 +111,7 @@ test("deck: content or a source deck is required", () => {
 });
 
 test("deck: formats are constrained", () => {
-  ok("deck", { content: "x", formats: ["html", "pdf"] });
+  ok("deck", { content: "x", formats: ["html", "pdf", "script"] });
   bad("deck", { content: "x", formats: ["docx"] }, "formats");
   bad("deck", { content: "x", formats: [] }, "formats");
   bad("deck", { content: "x", formats: "html" }, "formats");
@@ -213,6 +213,12 @@ test("brand_image_url: rejected for PPTX output", () => {
 });
 
 // --- shared fields --------------------------------------------------------
+
+test("shared: fit and narrate are booleans", () => {
+  ok("deck", { content: "x", fit: false, narrate: false });
+  bad("deck", { content: "x", fit: "no" }, "fit must be a boolean");
+  bad("deck", { content: "x", narrate: 1 }, "narrate must be a boolean");
+});
 
 test("shared: publish must be boolean", () => {
   ok("deck", { content: "x", publish: false });

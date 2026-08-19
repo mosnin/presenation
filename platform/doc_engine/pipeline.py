@@ -18,6 +18,7 @@ from . import (
 )
 from . import brand
 from . import infer
+from . import narrate as narrate_mod
 from . import patch as patch_mod
 from . import fit as fit_engine
 from .theme import Theme, resolve_theme
@@ -95,6 +96,7 @@ def generate_deck(
     brand_image: str | Path | None = None,
     source_deck: dict | None = None,
     patch: list[dict] | None = None,
+    narrate: bool = True,
 ) -> dict[str, str]:
     """Generate a presentation deck.
 
@@ -126,6 +128,12 @@ def generate_deck(
     else:
         deck = deck_mod.markdown_to_deck(content)
 
+    # Speaker cues and a timing budget, so the deck is presentable rather
+    # than just rendered. Existing notes (a PPTX import, an earlier pass)
+    # are never overwritten.
+    if narrate:
+        deck = narrate_mod.narrate_deck(deck)
+
     theme = _theme_for(template, templates_dir, specs_dir, brand_image)
 
     # Measure the rendered deck and repair anything that overflows the
@@ -137,6 +145,10 @@ def generate_deck(
     (out_dir / "deck.json").write_text(json.dumps(deck, indent=2))
 
     outputs: dict[str, str] = {}
+    if narrate and "script" in formats:
+        script_path = out_dir / "script.md"
+        script_path.write_text(narrate_mod.to_script(deck))
+        outputs["script"] = str(script_path)
     if "html" in formats:
         html_path = out_dir / "deck.html"
         html_path.write_text(deck_render.render_deck_html(deck, theme))

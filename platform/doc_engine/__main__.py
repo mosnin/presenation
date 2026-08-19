@@ -39,6 +39,11 @@ def main() -> None:
     )
     parser.add_argument("--themes", default=None, help="comma-separated, for previews")
     parser.add_argument(
+        "--no-narrate",
+        action="store_true",
+        help="skip speaker cues and timing estimates (decks only)",
+    )
+    parser.add_argument(
         "--no-fit",
         action="store_true",
         help="skip the measure-and-repair layout pass (decks only)",
@@ -92,6 +97,7 @@ def main() -> None:
             source_pptx=args.from_pptx,
             chromium=args.chromium,
             fit=not args.no_fit,
+            narrate=not args.no_narrate,
             brand_image=args.brand_image,
             source_deck=(
                 json.loads(Path(args.deck_file).read_text())

@@ -199,6 +199,25 @@ item matches, never a majority, because three ordinary sentences forced into
 stat cards look far worse than a missed conversion. "Status: green" and
 "Phase: 2 of the rollout plan" stay bullets.
 
+**Narration and presenter view** (`narrate.py`) closes the gap between a
+rendered deck and a presentable one. Whoever stands up still has to work out
+what to say over each slide and whether the whole thing fits their slot —
+exactly the part an agent could hand over. Cues and a duration estimate are
+derived from the deck model itself, and the interactive deck gains a
+presenter window (press **P**): notes, next slide, elapsed timer, and the
+planned time by that point, on the speaker's screen while the deck stays on
+the projector. The two windows talk over `postMessage` on the opener handle,
+which works from `file://` where `BroadcastChannel` and `localStorage` do
+not.
+
+The cues are framed as prompts, not a script to read aloud: a deterministic
+pass cannot know the argument being made, and pretending otherwise produces
+confident nonsense. Real generated narration would need an LLM pass and is
+not implemented. Existing notes — from a PowerPoint import — are never
+overwritten.
+Deck jobs can also request a `script` format, a markdown speaker script with
+a running clock.
+
 **Patchable decks** (`patch.py`) fix the shape of the agent loop. Changing
 one number used to mean regenerating the whole deck: a new model call, a new
 layout, and every other slide quietly different. Since a deck is already a

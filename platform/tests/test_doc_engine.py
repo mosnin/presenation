@@ -212,6 +212,28 @@ class DeckRenderTests(unittest.TestCase):
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
 
+    def test_embedded_json_cannot_break_out_of_its_script_tag(self):
+        """JSON escaping leaves "</script>" intact, so slide text containing
+        it would close the tag and execute as HTML."""
+        import json
+        import re
+
+        theme = resolve_theme(SLIDE_TEMPLATE, templates_dir=TEMPLATES, specs_dir=SPECS)
+        evil = "<script>alert(1)</script>"
+        deck = {
+            "title": evil,
+            "slides": [{"layout": "title", "title": evil, "notes": evil}],
+        }
+        html = deck_render.render_deck_html(deck, theme)
+        self.assertNotIn(evil, html)
+
+        # ...and the payload is still valid JSON carrying the real value.
+        match = re.search(
+            rf'id="{deck_render.PRESENTER_DATA_ID}">(.*?)</script>', html, re.S
+        )
+        self.assertIsNotNone(match)
+        self.assertEqual(json.loads(match.group(1))[0]["notes"], evil)
+
     def test_missing_image_is_skipped_not_broken(self):
         deck = {
             "title": "T",
@@ -688,6 +710,96 @@ class InferenceTests(unittest.TestCase):
         layouts = [s["layout"] for s in deck["slides"]]
         self.assertIn("stats", layouts)
         self.assertIn("table", layouts)
+
+
+class NarrationTests(unittest.TestCase):
+    """Speaker cues and timing estimates."""
+
+    def setUp(self) -> None:
+        self.deck = {
+            "title": "Q3",
+            "slides": [
+                {"layout": "title", "title": "Q3 Report"},
+                {
+                    "layout": "stats",
+                    "heading": "Metrics",
+                    "items": [{"value": "$4.2M", "label": "Revenue"}],
+                },
+                {"layout": "quote", "text": "A claim", "attribution": "Dana"},
+                {"layout": "closing", "heading": "Thanks"},
+            ],
+        }
+
+    def test_every_slide_gets_a_cue_and_a_duration(self):
+        from doc_engine.narrate import narrate_deck
+
+        narrated = narrate_deck(self.deck)
+        for slide in narrated["slides"]:
+            self.assertTrue(slide["notes"].strip())
+            self.assertGreater(slide["seconds"], 0)
+        self.assertEqual(
+            narrated["seconds"],
+            round(sum(s["seconds"] for s in narrated["slides"])),
+        )
+
+    def test_cues_are_specific_to_the_slide(self):
+        from doc_engine.narrate import narrate_deck
+
+        narrated = narrate_deck(self.deck)
+        self.assertIn("Q3 Report", narrated["slides"][0]["notes"])
+        self.assertIn("$4.2M", narrated["slides"][1]["notes"])
+        self.assertIn("Dana", narrated["slides"][2]["notes"])
+
+    def test_existing_notes_are_not_clobbered(self):
+        """Real speaker notes — from a PPTX import — beat a generated cue."""
+        from doc_engine.narrate import narrate_deck
+
+        deck = {**self.deck}
+        deck["slides"] = [{**deck["slides"][0], "notes": "Mine"}] + deck["slides"][1:]
+        self.assertEqual(narrate_deck(deck)["slides"][0]["notes"], "Mine")
+        self.assertNotEqual(
+            narrate_deck(deck, overwrite=True)["slides"][0]["notes"], "Mine"
+        )
+
+    def test_denser_slides_take_longer(self):
+        from doc_engine.narrate import estimate_seconds
+
+        sparse = {"layout": "bullets", "heading": "H", "items": ["one"]}
+        dense = {
+            "layout": "bullets",
+            "heading": "H",
+            "items": ["a fairly long bullet with a good number of words"] * 5,
+        }
+        self.assertGreater(estimate_seconds(dense), estimate_seconds(sparse))
+
+    def test_input_deck_is_not_mutated(self):
+        from doc_engine.narrate import narrate_deck
+
+        narrate_deck(self.deck)
+        self.assertNotIn("notes", self.deck["slides"][0])
+
+    def test_script_lists_every_slide_with_a_running_clock(self):
+        from doc_engine.narrate import to_script
+
+        script = to_script(self.deck)
+        self.assertIn("speaker script", script)
+        for index in range(1, 5):
+            self.assertIn(f"## {index}.", script)
+        self.assertIn("at 0:00", script)
+
+    def test_presenter_data_is_embedded_for_interactive_decks_only(self):
+        from doc_engine import deck_render
+        from doc_engine.narrate import narrate_deck
+
+        theme = resolve_theme(SLIDE_TEMPLATE, templates_dir=TEMPLATES, specs_dir=SPECS)
+        narrated = narrate_deck(self.deck)
+
+        interactive = deck_render.render_deck_html(narrated, theme)
+        self.assertIn(deck_render.PRESENTER_DATA_ID, interactive)
+        self.assertIn("openPresenter", interactive)
+
+        printed = deck_render.render_deck_html(narrated, theme, print_mode=True)
+        self.assertNotIn(deck_render.PRESENTER_DATA_ID, printed)
 
 
 class PatchTests(unittest.TestCase):
