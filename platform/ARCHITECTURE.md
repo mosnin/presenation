@@ -186,6 +186,19 @@ guessing wrong is worse than a clean default. The result serializes to an
 ordinary design spec (`theme_to_spec`), so it can be reviewed, hand-edited,
 and committed like any other theme.
 
+**Content-aware layout** (`infer.py`) is why decks stop reading as
+templated. Prose arrives flat, so everything becomes a bullet list: four
+headline numbers, a customer quote, and a project timeline all get the same
+grey treatment even though the information carried its own shape. The
+inference pass recovers that shape before rendering — a bullet list that is
+really figures becomes stat cards, dated milestones become a timeline table,
+a quotation keeps its attribution — with no model call.
+
+Every rule is deliberately conservative: a group converts only when *every*
+item matches, never a majority, because three ordinary sentences forced into
+stat cards look far worse than a missed conversion. "Status: green" and
+"Phase: 2 of the rollout plan" stay bullets.
+
 **Patchable decks** (`patch.py`) fix the shape of the agent loop. Changing
 one number used to mean regenerating the whole deck: a new model call, a new
 layout, and every other slide quietly different. Since a deck is already a

@@ -40,6 +40,10 @@ GET  /agent/v1/jobs/status?id=…  → { status, artifacts:[{format,url,public_u
 Plus `POST /agent/v1/jobs/cancel` and `…/retry`. Add `"publish": true` to any
 request to also place the artifact at a stable public URL.
 
+Content is **routed to the layout it deserves**: figures become stat cards,
+dated milestones become a timeline, quotes keep their attribution — detected
+deterministically from plain prose, with no extra model call.
+
 Decks are **patchable**: every deck job returns its model as `deck.json`, and
 a later job can send it back with a list of edits (`patch`) to change one
 slide without regenerating the rest.

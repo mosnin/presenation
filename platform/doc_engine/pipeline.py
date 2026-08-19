@@ -17,6 +17,7 @@ from . import (
     structure,
 )
 from . import brand
+from . import infer
 from . import patch as patch_mod
 from . import fit as fit_engine
 from .theme import Theme, resolve_theme
@@ -59,6 +60,9 @@ def generate_document(
         doc = llm.generate_structure(content, instructions)
     else:
         doc = structure.parse_markdown(content)
+    # Recover shape thrown away by prose: figures become stat cards, dated
+    # milestones become a timeline, quotes keep their attribution.
+    doc = infer.enrich_document(doc)
 
     theme = _theme_for(template, templates_dir, specs_dir, brand_image)
     html_text = render.render_html(doc, theme)

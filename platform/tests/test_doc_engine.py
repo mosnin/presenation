@@ -587,6 +587,109 @@ class FitMeasureTests(unittest.TestCase):
         self.assertEqual(fixed["slides"], deck["slides"])
 
 
+class InferenceTests(unittest.TestCase):
+    """Recovering the shape of content that arrived as prose."""
+
+    def test_labelled_figures_become_stats(self):
+        from doc_engine.infer import extract_stats
+
+        stats = extract_stats(
+            ["Revenue: $4.2M", "QoQ growth: 18%", "Gross margin: 41%", "NPS: 61"]
+        )
+        self.assertIsNotNone(stats)
+        self.assertEqual([s["value"] for s in stats], ["$4.2M", "18%", "41%", "61"])
+        self.assertEqual(stats[0]["label"], "Revenue")
+
+    def test_figures_inside_sentences_become_stats(self):
+        from doc_engine.infer import extract_stats
+
+        stats = extract_stats(["Revenue grew to $4.2M", "Margin improved to 41%"])
+        self.assertIsNotNone(stats)
+        # Dangling connectives are trimmed off the label.
+        self.assertEqual(stats[0]["label"], "Revenue grew")
+
+    def test_ordinary_bullets_are_left_alone(self):
+        """A false positive looks far worse than a missed conversion."""
+        from doc_engine.infer import extract_stats
+
+        for items in [
+            ["Two new depots opened", "Support improved", "Hiring continued"],
+            ["Revenue: $4.2M", "We opened 2 depots across the midwest this quarter"],
+            ["Status: green", "Owner: ops"],
+            ["Phase: 2 of the rollout plan", "Team: 4 engineers"],
+            ["$4.2M in revenue"],  # a single figure is not a row
+            ["a: 1", "b: 2", "c: 3", "d: 4", "e: 5"],  # too many for a row
+        ]:
+            self.assertIsNone(extract_stats(items), f"wrongly converted {items}")
+
+    def test_dated_milestones_become_a_timeline(self):
+        from doc_engine.infer import extract_timeline
+
+        result = extract_timeline(
+            ["Q1 2026: Cargo launch", "Q2 2026: Two metros", "Q3 2026 — Fleet API"]
+        )
+        self.assertIsNotNone(result)
+        header, rows = result
+        self.assertEqual(header, ["When", "What"])
+        self.assertEqual(rows[0], ["Q1 2026", "Cargo launch"])
+
+    def test_undated_lists_are_not_timelines(self):
+        from doc_engine.infer import extract_timeline
+
+        self.assertIsNone(extract_timeline(["Launch", "Expand", "Raise"]))
+        self.assertIsNone(extract_timeline(["2026: Only one row"]))
+
+    def test_quote_attribution_is_separated(self):
+        from doc_engine.infer import split_attribution
+
+        text, who = split_attribution(
+            '"The fastest-growing product in company history." — Dana Reyes, COO'
+        )
+        self.assertEqual(who, "Dana Reyes, COO")
+        self.assertNotIn('"', text)
+        self.assertTrue(text.startswith("The fastest"))
+
+    def test_trailing_clause_is_not_an_attribution(self):
+        from doc_engine.infer import split_attribution
+
+        original = (
+            "A quote that ends with a clause - which is not really an "
+            "attribution at all here"
+        )
+        text, who = split_attribution(original)
+        self.assertIsNone(who)
+        self.assertEqual(text, original)
+
+    def test_enrichment_runs_across_a_document(self):
+        from doc_engine.infer import enrich_document
+
+        doc = {
+            "title": "T",
+            "sections": [
+                {
+                    "heading": "Metrics",
+                    "blocks": [
+                        {"type": "bullets", "items": ["Revenue: $4.2M", "NPS: 61"]},
+                        {"type": "bullets", "items": ["Just", "Some", "Words"]},
+                    ],
+                }
+            ],
+        }
+        kinds = [b["type"] for b in enrich_document(doc)["sections"][0]["blocks"]]
+        self.assertEqual(kinds, ["stats", "bullets"])
+
+    def test_markdown_deck_uses_inferred_layouts(self):
+        from doc_engine.deck import markdown_to_deck
+
+        deck = markdown_to_deck(
+            "# T\n\n## Metrics\n- Revenue: $4.2M\n- NPS: 61\n\n"
+            "## Plan\n- Q1 2026: Launch\n- Q2 2026: Expand\n- Q3 2026: Scale\n"
+        )
+        layouts = [s["layout"] for s in deck["slides"]]
+        self.assertIn("stats", layouts)
+        self.assertIn("table", layouts)
+
+
 class PatchTests(unittest.TestCase):
     """Surgical edits to a deck model."""
 

@@ -20,6 +20,7 @@ A deck is a plain dict:
 
 from __future__ import annotations
 
+from .infer import enrich_document
 from .structure import parse_markdown
 
 
@@ -107,7 +108,7 @@ def doc_to_deck(doc: dict) -> dict:
 
 
 def markdown_to_deck(content: str) -> dict:
-    return doc_to_deck(parse_markdown(content))
+    return doc_to_deck(enrich_document(parse_markdown(content)))
 
 
 DECK_JSON_SPEC = """

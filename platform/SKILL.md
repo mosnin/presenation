@@ -110,6 +110,9 @@ to anyone with the URL).
   to re-typeset the content in a coherent design system.
 - `document`: `formats` (array of `"pdf"`, `"docx"`, `"html"`; default
   `["pdf"]`).
+- `style_preview`: `title` (required), `subtitle`, `meta`, and `themes` (an
+  array; omit for a spread across light/dark and serif/sans). Ignores
+  `template` — it renders every candidate.
 
 ### Editing a deck instead of regenerating it
 
@@ -140,9 +143,6 @@ never lands.
 Prefer this over regenerating whenever the user asks for a specific change
 ("fix the number on slide 4", "drop the pricing slide", "move the summary to
 the front"). Regenerate only when they want different content.
-- `style_preview`: `title` (required), `subtitle`, `meta`, and `themes` (an
-  array; omit for a spread across light/dark and serif/sans). Ignores
-  `template` — it renders every candidate.
 
 ## Polling
 
@@ -213,6 +213,10 @@ entry, or a `source_pptx_url` that isn't a public https URL.
   (they run concurrently).
 - `content` can be a long document — paste the source material in rather than
   summarizing it first, and let the platform do the summarizing.
+- Writing `content` as markdown pays off: `- Revenue: $4.2M` style lines
+  become stat cards, `- Q1 2026: Launch` runs become a timeline, and a `>`
+  quote ending in `— Name` keeps its attribution. Plain sentences stay
+  bullets.
 - Do not fabricate a download URL or claim a file exists before a job reports
   `succeeded`.
 - A ready-made polling client is in `examples/agent_client.py`.
